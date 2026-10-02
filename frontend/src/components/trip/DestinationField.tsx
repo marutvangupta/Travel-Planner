@@ -2,47 +2,21 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, Loader2, MapPin } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 import { api } from "../../lib/api";
+import { placeKey, POPULAR, PLACES, rankPlaces, type Place } from "../../lib/places";
 import { inputCls } from "../ui";
 
-export interface Suggestion {
-  label: string;
-  name: string;
-  detail: string;
-}
-
-// Shown before typing in live mode, and used as an offline fallback if the lookup fails.
-const POPULAR: Suggestion[] = [
-  { label: "Jaipur, India", name: "Jaipur", detail: "India" },
-  { label: "Goa, India", name: "Goa", detail: "India" },
-  { label: "Udaipur, India", name: "Udaipur", detail: "India" },
-  { label: "Tokyo, Japan", name: "Tokyo", detail: "Japan" },
-  { label: "Paris, France", name: "Paris", detail: "France" },
-  { label: "Dubai, United Arab Emirates", name: "Dubai", detail: "United Arab Emirates" },
-  { label: "Singapore", name: "Singapore", detail: "Singapore" },
-  { label: "Bali, Indonesia", name: "Bali", detail: "Indonesia" },
-];
+export type Suggestion = Place;
 
 const fromLabel = (label: string): Suggestion => {
   const [name, ...rest] = label.split(",");
   return { label, name: name.trim(), detail: rest.join(",").trim() };
 };
-/** Matches ranked the way people type: city-name prefix, then any word prefix, then anywhere ("pa" is Paris before Japan). */
-function rank(list: Suggestion[], query: string): Suggestion[] {
-  const q = query.toLowerCase();
-  if (!q) return list;
-  const score = (s: Suggestion) => {
-    const name = s.name.toLowerCase();
-    const label = s.label.toLowerCase();
-    if (name.startsWith(q)) return 0;
-    if (label.split(/[\s,]+/).some((w) => w.startsWith(q))) return 1;
-    if (name.includes(q)) return 2;
-    return label.includes(q) ? 3 : -1;
-  };
-  return list
-    .map((s) => ({ s, k: score(s) }))
-    .filter((x) => x.k >= 0)
-    .sort((a, b) => a.k - b.k)
-    .map((x) => x.s);
+
+/** Instant matches from the built-in list first, so nothing shifts under the pointer when the lookup lands below them. */
+function merge(local: Suggestion[], remote: Suggestion[], max = 8): Suggestion[] {
+  const byKey = new Map<string, Suggestion>();
+  for (const s of [...local, ...remote]) if (!byKey.has(placeKey(s))) byKey.set(placeKey(s), s);
+  return [...byKey.values()].slice(0, max);
 }
 
 function Highlight({ text, q }: { text: string; q: string }) {
@@ -58,8 +32,9 @@ function Highlight({ text, q }: { text: string; q: string }) {
 }
 
 /**
- * Destination combobox. Demo mode filters the supported cities locally; live mode asks the API for matching cities
- * once typing settles. Free text is always accepted, so a failed lookup never blocks planning.
+ * Destination combobox. Demo mode filters the supported cities locally. Live mode shows matches from a built-in list of
+ * well-known destinations at once, then adds the API's matches once typing settles. Free text is always accepted, so a
+ * failed lookup never blocks planning.
  */
 export function DestinationField({ id, value, onChange, demoCities, autoFocus }: { id: string; value: string; onChange: (v: string) => void; demoCities: string[] | null; autoFocus?: boolean }) {
   const listId = useId();
@@ -79,7 +54,11 @@ export function DestinationField({ id, value, onChange, demoCities, autoFocus }:
     const ctl = new AbortController();
     const timer = window.setTimeout(() => {
       api<{ suggestions: Suggestion[]; error?: string }>(`/destinations?q=${encodeURIComponent(q)}`, { signal: ctl.signal })
-        .then((r) => setRemote({ q, items: r.suggestions, failed: !!r.error }))
+        .then((r) => {
+          // the server log has the full reason; this makes it visible from the browser too
+          if (r.error) console.warn("Destination lookup failed:", r.error);
+          setRemote({ q, items: r.suggestions, failed: !!r.error });
+        })
         .catch(() => {
           if (!ctl.signal.aborted) setRemote({ q, items: [], failed: true });
         })
@@ -95,24 +74,33 @@ export function DestinationField({ id, value, onChange, demoCities, autoFocus }:
 
   const { heading, items, message } = useMemo(() => {
     if (demoCities) {
-      const found = rank(demoCities.map(fromLabel), q);
+      const found = rankPlaces(demoCities.map(fromLabel), q);
       return {
         heading: "Demo cities",
         items: found,
         message: found.length ? "" : "Demo mode covers Jaipur, Goa, Tokyo and Paris. Add a Google Maps key to plan anywhere else.",
       };
     }
-    if (q.length >= 2 && remote?.q === q && remote.items.length) return { heading: "Cities", items: remote.items, message: "" };
-    const local = rank(POPULAR, q);
+    if (!q) return { heading: "Popular destinations", items: POPULAR, message: "" };
+    const found = merge(rankPlaces(PLACES, q).slice(0, 5), remote?.q === q ? remote.items : []);
     const settled = q.length >= 2 && remote?.q === q && !loading;
     return {
-      heading: local.length ? "Popular destinations" : "",
-      items: local,
-      message: loading && !local.length ? "Searching…" : settled && remote?.failed ? "City suggestions are unavailable right now. Type the city and continue." : settled ? "No matching cities. You can still type any destination." : "",
+      heading: "",
+      items: found,
+      message: found.length
+        ? ""
+        : loading
+          ? "Searching…"
+          : settled && remote?.failed
+            ? "City suggestions are unavailable right now. Type the city and continue."
+            : settled
+              ? "No matching places. You can still type any destination."
+              : "",
     };
-  }, [demo, demoCities, q, remote, loading]);
+  }, [demoCities, q, remote, loading]);
 
-  useEffect(() => setActive(-1), [q, items.length]);
+  // a new query starts with nothing highlighted; results arriving for the same query keep the highlight in place
+  useEffect(() => setActive(-1), [q]);
 
   const pick = (s: Suggestion) => {
     onChange(s.label);

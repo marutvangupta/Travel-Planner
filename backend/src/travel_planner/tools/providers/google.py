@@ -6,6 +6,8 @@ Google content is cached only briefly (see the TTLs in tools/core.py) to respect
 
 from __future__ import annotations
 
+import httpx
+
 from ...config import get_settings
 from ...schemas import Geo, Hours, Place, RouteCell, Source
 from ..common import ToolFailure, http_json, now_iso
@@ -109,6 +111,18 @@ async def autocomplete_cities(query: str, limit: int) -> list[dict]:
         if len(out) >= limit:
             break
     return out
+
+
+def error_reason(exc: BaseException) -> str:
+    """Google's own explanation for a failed call (for example that an API is not enabled for the key)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        try:
+            err = exc.response.json().get("error") or {}
+        except ValueError:
+            err = {}
+        status = " ".join(str(x) for x in (exc.response.status_code, err.get("status")) if x)
+        return f"{status}: {err['message']}" if err.get("message") else f"HTTP {status}"
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _hours(raw: dict | None) -> Hours | None:
