@@ -44,7 +44,7 @@ not claim the plans are the best possible. The LLM planner is evaluated with the
 - **Alerts**: a weather watcher compares fresh forecasts to the plan and raises a proposal; "Simulate" lets you try it.
 - **Sources on every stop** (place provider, forecast, guide passage) and a Wikivoyage-style guide index with hybrid retrieval.
 - **Memory that you can see.** Thumbs up/down and removals move category weights and create inferred memories with their
-  evidence. Everything is listed on the Memory page and deletable.
+  evidence. Everything is listed on the Preferences page and deletable.
 - **Cost and latency tracking** per run (tokens, USD, tool calls, repair loops, per-node time), optional Langfuse tracing.
 
 ## Architecture
@@ -52,7 +52,7 @@ not claim the plans are the best possible. The LLM planner is evaluated with the
 ```
 ┌──────────────────────── React (Vite, TypeScript, Tailwind 4, Framer Motion) ───────────────────┐
 │ Auth · Trips · Wizard + live boarding pass · Agent progress · Workspace (timeline, chart map,   │
-│ chat, what-if, history, simulate) · Memory                                                       │
+│ chat, what-if, history, simulate) · Preferences and memory                                       │
 └────────────────────────────────── REST + SSE (fetch stream) ───────────────────────────────────┘
                                           │
 ┌─────────────────────────────────── FastAPI (backend/src/travel_planner) ───────────────────────┐

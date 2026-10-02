@@ -104,7 +104,7 @@ export function HeroChart() {
         </g>
       ))}
       </g>
-      <g transform="translate(560 650)" opacity=".75">
+      <g transform="translate(572 74)" opacity=".7">
         <circle r="26" fill="none" stroke="var(--faint)" strokeWidth="1" />
         <motion.g animate={reduce ? undefined : { rotate: [0, 6, -4, 0] }} transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}>
           <path d="M0 -22 L5 0 L0 22 L-5 0 Z" fill="var(--sea)" opacity=".9" />

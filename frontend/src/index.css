@@ -2,101 +2,111 @@
 
 /*
   Waypoint design tokens.
-  Concept: a navigator's chart table. Cool paper by day, night chart in the dark; teal for route and action,
-  a single signal orange reserved for change (alerts, diffs, re-plans). Type: condensed signage display,
+  Concept: a navigator's chart table. Warm chart paper by day, night chart in the dark; teal ink for route and action,
+  a single signal orange reserved for change (alerts, diffs, re-plans). Type: condensed signage display for names,
   humanist body, mono for anything that lines up (times, costs, coordinates).
+  Every text/background pair below meets WCAG AA (4.5:1) at body sizes.
 */
 :root {
-  --bg: #e7ecea;
-  --surface: #f5f8f6;
-  --surface-2: #ebf0ed;
-  --ink: #0d2229;
-  --muted: #53686e;
-  --faint: #8a9ea3;
-  --line: #c6d1ce;
-  --sea: #0a7c77;
+  --bg: #f3f2ed;
+  --surface: #fbfaf7;
+  --surface-2: #ecebe4;
+  --raised: #ffffff;
+  --ink: #0f2329;
+  --muted: #55666a;
+  --faint: #737d7a;
+  --line: #dcd9cf;
+  --line-strong: #c4c0b3;
+  --sea: #08716a;
   --sea-ink: #ffffff;
-  --sea-soft: #d3eae7;
-  --signal: #d8481a;
-  --signal-soft: #f8dcd1;
-  --good: #23835a;
-  --good-soft: #d5ebe0;
-  --warn: #a8700f;
-  --warn-soft: #f4e4c4;
-  --bad: #c13a32;
-  --rain: #3472bd;
-  --rain-soft: #d6e4f4;
-  --grid: rgba(13, 34, 41, 0.07);
-  --shadow: 0 1px 0 rgba(13, 34, 41, 0.04), 0 8px 24px -12px rgba(13, 34, 41, 0.22);
-  --shadow-lg: 0 2px 0 rgba(13, 34, 41, 0.04), 0 24px 56px -20px rgba(13, 34, 41, 0.35);
+  --sea-soft: #e1eeea;
+  --signal: #b43f18;
+  --signal-soft: #fae7dd;
+  --good: #1b6e4a;
+  --good-soft: #e0efe5;
+  --warn: #835809;
+  --warn-soft: #f6ecd5;
+  --bad: #b8382f;
+  --rain: #28629d;
+  --rain-soft: #e3ecf6;
+  --grid: rgba(15, 35, 41, 0.06);
+  --shadow-sm: 0 1px 2px rgba(15, 35, 41, 0.06);
+  --shadow-pop: 0 1px 0 rgba(15, 35, 41, 0.04), 0 16px 40px -16px rgba(15, 35, 41, 0.32);
   color-scheme: light;
 }
+
+/* night chart; repeated for the explicit theme choice because @media cannot be combined with an attribute toggle */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #061519;
-    --surface: #0c262d;
-    --surface-2: #103039;
-    --ink: #e3efed;
-    --muted: #93adb2;
-    --faint: #5f7d84;
-    --line: #1b3f48;
-    --sea: #3fd0c6;
+    --bg: #071519;
+    --surface: #0c2228;
+    --surface-2: #112b32;
+    --raised: #1d3f48;
+    --ink: #e4eeec;
+    --muted: #94abb0;
+    --faint: #6e8b91;
+    --line: #1a3a42;
+    --line-strong: #2a525c;
+    --sea: #3fcfc4;
     --sea-ink: #04201f;
-    --sea-soft: #0f3a3d;
-    --signal: #ff7b4f;
-    --signal-soft: #40231a;
-    --good: #52c58c;
-    --good-soft: #123a2a;
-    --warn: #e2ac45;
-    --warn-soft: #3d2f12;
+    --sea-soft: #0f3437;
+    --signal: #ff8a62;
+    --signal-soft: #3a2018;
+    --good: #5ccb94;
+    --good-soft: #10352a;
+    --warn: #e6b24f;
+    --warn-soft: #362a10;
     --bad: #ff6f66;
-    --rain: #6aa6ec;
-    --rain-soft: #14304f;
-    --grid: rgba(227, 239, 237, 0.06);
-    --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
-    --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.3), 0 28px 60px -22px rgba(0, 0, 0, 0.85);
+    --rain: #79b0ef;
+    --rain-soft: #13294a;
+    --grid: rgba(228, 238, 236, 0.055);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 1px 0 rgba(0, 0, 0, 0.3), 0 20px 44px -18px rgba(0, 0, 0, 0.85);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #061519;
-  --surface: #0c262d;
-  --surface-2: #103039;
-  --ink: #e3efed;
-  --muted: #93adb2;
-  --faint: #5f7d84;
-  --line: #1b3f48;
-  --sea: #3fd0c6;
+  --bg: #071519;
+  --surface: #0c2228;
+  --surface-2: #112b32;
+  --raised: #1d3f48;
+  --ink: #e4eeec;
+  --muted: #94abb0;
+  --faint: #6e8b91;
+  --line: #1a3a42;
+  --line-strong: #2a525c;
+  --sea: #3fcfc4;
   --sea-ink: #04201f;
-  --sea-soft: #0f3a3d;
-  --signal: #ff7b4f;
-  --signal-soft: #40231a;
-  --good: #52c58c;
-  --good-soft: #123a2a;
-  --warn: #e2ac45;
-  --warn-soft: #3d2f12;
+  --sea-soft: #0f3437;
+  --signal: #ff8a62;
+  --signal-soft: #3a2018;
+  --good: #5ccb94;
+  --good-soft: #10352a;
+  --warn: #e6b24f;
+  --warn-soft: #362a10;
   --bad: #ff6f66;
-  --rain: #6aa6ec;
-  --rain-soft: #14304f;
-  --grid: rgba(227, 239, 237, 0.06);
-  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
-  --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.3), 0 28px 60px -22px rgba(0, 0, 0, 0.85);
+  --rain: #79b0ef;
+  --rain-soft: #13294a;
+  --grid: rgba(228, 238, 236, 0.055);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 1px 0 rgba(0, 0, 0, 0.3), 0 20px 44px -18px rgba(0, 0, 0, 0.85);
   color-scheme: dark;
 }
 
-/* always-dark surface (landing hero) regardless of the page theme */
+/* always-dark surface (landing hero, boarding pass stub, generation radar) regardless of the page theme */
 .night {
-  --bg: #061519;
-  --surface: #0c262d;
-  --surface-2: #103039;
-  --ink: #e3efed;
-  --muted: #93adb2;
-  --faint: #5f7d84;
-  --line: #1b3f48;
-  --sea: #3fd0c6;
+  --bg: #071519;
+  --surface: #0c2228;
+  --surface-2: #112b32;
+  --raised: #1d3f48;
+  --ink: #e4eeec;
+  --muted: #94abb0;
+  --faint: #6e8b91;
+  --line: #1a3a42;
+  --sea: #3fcfc4;
   --sea-ink: #04201f;
-  --signal: #ff7b4f;
-  --grid: rgba(227, 239, 237, 0.06);
+  --signal: #ff8a62;
+  --grid: rgba(228, 238, 236, 0.055);
   background: var(--bg);
   color: var(--ink);
   color-scheme: dark;
@@ -106,10 +116,12 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-raised: var(--raised);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-sea: var(--sea);
   --color-sea-ink: var(--sea-ink);
   --color-sea-soft: var(--sea-soft);
@@ -125,12 +137,17 @@
   --font-display: "Bricolage Grotesque Variable", "Arial Narrow", system-ui, sans-serif;
   --font-sans: "Hanken Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-ctl: 9px;
+  --radius-box: 12px;
 }
 
 html,
 body,
 #root {
   height: 100%;
+}
+html {
+  -webkit-tap-highlight-color: transparent;
 }
 body {
   margin: 0;
@@ -141,27 +158,34 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
 }
 ::selection {
   background: var(--sea);
   color: var(--sea-ink);
 }
 
-/* signage display: condensed width axis keeps long place names on one line */
+/*
+  Type scale. Display sizes are deliberately capped: names are set large, everything else is calm.
+  .display      condensed signage for proper nouns (cities, places, day themes)
+  .display-wide regular-width display for section titles
+  .label        mono eyebrow for metadata, never for form fields
+  .field-label  sentence-case label for inputs
+*/
 .display {
   font-family: var(--font-display);
   font-stretch: 78%;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 0.95;
+  letter-spacing: -0.005em;
+  line-height: 0.98;
   text-wrap: balance;
 }
 .display-wide {
   font-family: var(--font-display);
-  font-stretch: 100%;
+  font-stretch: 96%;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.05;
+  letter-spacing: -0.012em;
+  line-height: 1.12;
   text-wrap: balance;
 }
 .mono {
@@ -173,15 +197,22 @@ body {
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 500;
+  line-height: 1.3;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
 }
 .num {
   font-variant-numeric: tabular-nums;
 }
 
-/* chart paper: fine graticule behind pages */
+/* chart paper: fine graticule, used only where the chart metaphor carries meaning (hero, map, radar) */
 .paper {
   background-color: var(--bg);
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
@@ -191,20 +222,35 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-box);
+}
+.pop {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-pop);
 }
 
 :focus-visible {
   outline: 2px solid var(--sea);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* thin scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* fade the trailing edge of a horizontal scroller so overflow reads as "more" */
+.fade-x {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
 }
 
 /* skeleton shimmer */
@@ -214,7 +260,7 @@ body {
   }
 }
 .skeleton {
-  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in srgb, var(--line) 70%, var(--surface-2)) 37%, var(--surface-2) 63%);
   background-size: 200% 100%;
   animation: shimmer 1.6s linear infinite;
   border-radius: 8px;
@@ -223,10 +269,10 @@ body {
 /* ambient rain for wet days */
 @keyframes rainfall {
   from {
-    transform: translateY(-30%);
+    transform: translateY(-30%) rotate(14deg);
   }
   to {
-    transform: translateY(130%);
+    transform: translateY(130%) rotate(14deg);
   }
 }
 .rain-layer {
@@ -234,21 +280,20 @@ body {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  opacity: 0.55;
-  mask-image: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
+  opacity: 0.45;
+  mask-image: linear-gradient(90deg, transparent, #000 40%);
 }
 .rain-layer i {
   position: absolute;
   top: 0;
   width: 1.5px;
-  height: 22px;
+  height: 18px;
   border-radius: 2px;
   background: linear-gradient(180deg, transparent, var(--rain));
-  transform: rotate(14deg);
   animation: rainfall linear infinite;
 }
 
-/* radar ping for the agent run */
+/* radar ping */
 @keyframes ping {
   0% {
     transform: scale(0.3);
@@ -263,23 +308,18 @@ body {
   animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+/* a single pulse that draws the eye to something that just changed */
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--sea) 0%, transparent);
   }
   30% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--signal) 28%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--sea) 26%, transparent);
   }
 }
 .glow-once {
-  animation: glow 2.4s ease-out 1;
-}
-
-@keyframes drift {
-  to {
-    background-position: 480px 0;
-  }
+  animation: glow 2.2s ease-out 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -297,31 +337,46 @@ body {
 .budget-range {
   -webkit-appearance: none;
   appearance: none;
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--sea), var(--sea)) 0 / var(--fill, 20%) 100% no-repeat, var(--line);
-  outline-offset: 6px;
+  outline-offset: 8px;
+  cursor: pointer;
 }
 .budget-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  height: 24px;
-  width: 24px;
+  height: 22px;
+  width: 22px;
   border-radius: 50%;
   background: var(--surface);
-  border: 3px solid var(--sea);
-  box-shadow: var(--shadow);
+  border: 2px solid var(--sea);
+  box-shadow: var(--shadow-sm);
   cursor: grab;
   transition: transform 0.15s;
 }
 .budget-range:active::-webkit-slider-thumb {
-  transform: scale(1.15);
+  transform: scale(1.12);
   cursor: grabbing;
 }
 .budget-range::-moz-range-thumb {
-  height: 20px;
-  width: 20px;
+  height: 18px;
+  width: 18px;
   border-radius: 50%;
   background: var(--surface);
-  border: 3px solid var(--sea);
+  border: 2px solid var(--sea);
   cursor: grab;
+}
+
+/* native date inputs: match the theme's ink */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
 }
