@@ -2,6 +2,7 @@
 
 create:  intake -> research -> plan -> validate <-> repair_llm (bounded) -> fix -> ground
 change:  intake -> research -> impact -> replan (partial, with repair) -> ground
+agent:   intake -> research -> agent_edit (tool-calling loop over the same edit engine) -> ground
 
 Planning/replacement choice may use the LLM; everything that decides validity is deterministic code.
 Nodes stream progress events (stage start/done) so the UI can show what the agent is doing.
@@ -23,21 +24,30 @@ from ..config import get_settings
 from ..schemas import AffectedItem, ChangeRequest, Diff, Itinerary, PlanOut, TripRequest, Violation
 from ..services.context import PlanContext
 from ..services.diff import diff_itineraries
-from ..services.editor import Editor, ImpactPlan, analyze_impact, attach_warnings, repair
+from ..services.editor import (
+    Editor,
+    ImpactPlan,
+    analyze_impact,
+    attach_warnings,
+    execute_plan,
+    repair,
+    resolve_place,
+)
 from ..services.planner import plan_heuristic
 from ..services.scheduler import collect_sources
 from ..services.tracking import current_tracker, start_run
 from ..services.validator import errors, validate
+from .edit_agent import run_edit_agent
 from .llm import LLMError, get_llm
 from .llm_planner import llm_choose_replacement, llm_plan, plan_to_itinerary
-from .research import apply_text_rules, build_context
+from .research import apply_text_rules, build_context, register_user_places
 from .tool_client import get_tools
 
 log = structlog.get_logger()
 
 
 class State(TypedDict, total=False):
-    mode: str  # create | change
+    mode: str  # create | change | agent
     request: TripRequest
     weights: dict[str, float]
     memories: list[str]
@@ -57,6 +67,10 @@ class State(TypedDict, total=False):
     notes: Annotated[list[str], operator.add]
     stats: dict
     planner: str
+    message: str  # agent mode: the traveller's message, recent chat history and whether it is a what-if
+    history: list[dict]
+    whatif: bool
+    agent: dict  # agent mode: kind, text, options, citations, steps
 
 
 def stage(name: str, label: str):  # noqa: ANN201
@@ -83,7 +97,7 @@ def stage(name: str, label: str):  # noqa: ANN201
 
 @stage("intake", "Reading your trip request")
 async def intake(state: State) -> dict:
-    req = apply_text_rules(state["request"])
+    req = apply_text_rules(state["request"]).model_copy(deep=True)  # edits change ctx.request; never the caller's
     bits = [f"{req.num_days} days", ", ".join(req.interests) or "open interests"]
     if req.diet != "none":
         bits.append(req.diet)
@@ -98,6 +112,8 @@ async def intake(state: State) -> dict:
 async def research(state: State) -> dict:
     ctx = await build_context(state["request"], get_tools(), weights=state.get("weights"))
     ctx.closed = set(state.get("closed", []))
+    if state.get("base") is not None:
+        await register_user_places(ctx, state["base"])
     rainy = sum(1 for d in range(ctx.request.num_days) if ctx.is_rainy(d))
     return {
         "ctx": ctx,
@@ -196,9 +212,25 @@ async def fix(state: State) -> dict:
 # ----------------------------------------------------------------------------- change flow
 
 
+async def resolve_named_places(ctx: PlanContext, cr: ChangeRequest) -> None:
+    """A named place that is not among the candidates is looked up once, so "add X" can work for any real place."""
+    for ch in cr.changes:
+        if ch.kind != "add_place" or ch.place_id or not ch.place_name or resolve_place(ctx, ch.place_name):
+            continue
+        try:
+            found = await get_tools().find_place(ctx.geo.name, ch.place_name, ctx.base[0], ctx.base[1])
+        except Exception as exc:  # the change then reports that the place was not found
+            log.warning("find_place.failed", error=str(exc))
+            continue
+        if found:
+            ctx.register_place(found[0], extra=found[0].place_id not in ctx.places)
+            ch.place_id = found[0].place_id
+
+
 @stage("impact", "Finding which stops are affected")
 async def impact(state: State) -> dict:
     ctx: PlanContext = state["ctx"]
+    await resolve_named_places(ctx, state["change"])
     plan_ = analyze_impact(ctx, state["base"], state["change"])
     return {"impact": plan_, "_detail": f"{len(plan_.affected)} stop(s) directly affected"}
 
@@ -222,18 +254,34 @@ async def replan(state: State) -> dict:
                 a.preferred = None
 
         await asyncio.gather(*(choose(a) for a in plan_.actions if a.kind == "replace" and a.item_id))
-    new = ed.run(plan_)
-    new, violations, loops = repair(ctx, new)
-    current_tracker().repair_loops += loops
-    merged = {a.item_id: a for a in plan_.affected}
-    merged.update({k: v for k, v in ed.affected.items() if k not in merged})
-    affected = list(merged.values())
-    diff = diff_itineraries(base, new, affected)
+    res = execute_plan(ctx, base, plan_)
+    current_tracker().repair_loops += res.repair_loops
     return {
-        "draft": new, "violations": violations, "affected": affected, "diff": diff,
-        "request_patch": plan_.request_patch, "notes": [*plan_.notes, *ed.notes], "planner": base.planner,
-        "_detail": f"{diff.summary} · {round(diff.stability * 100)}% of other stops unchanged",
+        "draft": res.itinerary, "violations": res.violations, "affected": res.affected, "diff": res.diff,
+        "request_patch": res.request_patch, "notes": res.notes, "planner": base.planner,
+        "_detail": f"{res.diff.summary} · {round(res.diff.stability * 100)}% of other stops unchanged",
     }
+
+
+@stage("agent_edit", "Working on your request")
+async def agent_edit(state: State) -> dict:
+    ctx: PlanContext = state["ctx"]
+    base: Itinerary = state["base"]
+    writer = get_stream_writer()
+    out = await run_edit_agent(
+        get_llm(), ctx, base, state["message"], state.get("history", []), whatif=state.get("whatif", False),
+        on_step=lambda label: writer({"type": "step", "node": "agent_edit", "label": label}),
+    )
+    reply = {"kind": out.kind, "text": out.text, "options": out.options, "citations": out.citations, "steps": out.steps}
+    if out.kind == "proposal":
+        res = out.session.finish()
+        return {
+            "draft": res.itinerary, "violations": res.violations, "affected": res.affected, "diff": res.diff,
+            "request_patch": res.request_patch, "notes": res.notes, "planner": base.planner, "agent": reply,
+            "_detail": f"{len(out.steps)} step(s) · {res.diff.summary}",
+        }
+    return {"draft": base, "violations": validate(base, ctx), "affected": [], "diff": diff_itineraries(base, base),
+            "request_patch": {}, "planner": base.planner, "agent": reply, "_detail": f"{len(out.steps)} step(s) · {out.kind}"}
 
 
 # ----------------------------------------------------------------------------- wiring
@@ -242,18 +290,20 @@ async def replan(state: State) -> dict:
 def build_graph():  # noqa: ANN201
     g = StateGraph(State)
     for name, fn in [("intake", intake), ("research", research), ("plan", plan), ("validate", validate_node),
-                     ("repair_llm", repair_llm), ("fix", fix), ("ground", ground), ("impact", impact), ("replan", replan)]:
+                     ("repair_llm", repair_llm), ("fix", fix), ("ground", ground), ("impact", impact), ("replan", replan),
+                     ("agent_edit", agent_edit)]:
         g.add_node(name, fn)
     g.add_edge(START, "intake")
     g.add_edge("intake", "research")
-    g.add_conditional_edges("research", lambda s: "plan" if s["mode"] == "create" else "impact",
-                            {"plan": "plan", "impact": "impact"})
+    g.add_conditional_edges("research", lambda s: {"create": "plan", "agent": "agent_edit"}.get(s["mode"], "impact"),
+                            {"plan": "plan", "impact": "impact", "agent_edit": "agent_edit"})
     g.add_edge("plan", "validate")
     g.add_conditional_edges("validate", route_validate, {"repair_llm": "repair_llm", "fix": "fix", "ground": "ground"})
     g.add_edge("repair_llm", "validate")
     g.add_edge("fix", "ground")
     g.add_edge("impact", "replan")
     g.add_edge("replan", "ground")
+    g.add_edge("agent_edit", "ground")
     g.add_edge("ground", END)
     return g.compile()
 

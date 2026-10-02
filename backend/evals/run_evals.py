@@ -30,7 +30,9 @@ def _bootstrap(live: bool) -> None:
 
 async def run(suite: str, judge: bool) -> dict[str, Any]:
     from travel_planner.agent.graph import run_workflow
+    from travel_planner.agent.research import build_context
     from travel_planner.agent.router import parse_message
+    from travel_planner.agent.tool_client import get_tools
     from travel_planner.config import get_settings
     from travel_planner.db import init_db
     from travel_planner.schemas import Itinerary
@@ -195,6 +197,80 @@ async def run(suite: str, judge: bool) -> dict[str, Any]:
         "failures": [r["case"] for r in change_rows if not r["router_ok"] or r.get("hard_violations", 0) or r.get("precision", 1) < 1 or r.get("recall", 1) < 1][:8],
     }
 
+    # ------------------------------------------------------------------ 2b. itinerary CRUD from plain prompts
+    def make_crud_message(kind: str, itin: Itinerary, ctx) -> tuple[str, list[str], Any]:  # noqa: ANN001
+        """Prompt, expected change kinds, and a check(new_itinerary) -> bool."""
+        n = len(itin.days)
+        last = n - 1
+        d0 = itin.days[0]
+        first = d0.items[0] if d0.items else None
+        used = {i.place_id for _, i in itin.all_items()}
+        spare = next((p for p in ctx.places.values() if p.place_id not in used and ctx.allowed(p)
+                      and "nightlife" not in p.tags and p.category not in ("restaurant", "cafe")), None)
+        on_day = lambda new, name, d: name in [i.name for i in new.days[d].items]  # noqa: E731
+        if kind == "move" and first:
+            return f"Move {first.name} to day {last + 1}", ["move_item"], lambda new: on_day(new, first.name, last)
+        if kind == "retime" and first:
+            return (f"do {first.name} in the afternoon", ["retime_item"],
+                    lambda new: any(i.name == first.name and i.slot == "afternoon" for _, i in new.all_items()))
+        if kind == "duration" and first:
+            return (f"spend 3 hours at {first.name}", ["set_duration"],
+                    lambda new: any(i.name == first.name and i.end - i.start == 180 for _, i in new.all_items()))
+        if kind == "note" and first:
+            return (f"add a note to {first.name}: book tickets ahead", ["edit_item"],
+                    lambda new: any(i.name == first.name and i.note == "book tickets ahead" for _, i in new.all_items()))
+        if kind == "add_place" and spare:
+            return f"add {spare.name} to day {min(2, n)}", ["add_place"], lambda new: on_day(new, spare.name, min(1, last))
+        if kind == "custom":
+            return (f"add a flight home at 18:00 on day {last + 1}", ["add_custom"],
+                    lambda new: any(i.custom and i.start == 18 * 60 for i in new.days[last].items))
+        if kind == "swap_days" and n > 1:
+            a, b = {i.name for i in itin.days[0].items}, {i.name for i in itin.days[1].items}
+            return ("swap day 1 and day 2", ["swap_days"],
+                    lambda new: {i.name for i in new.days[1].items} == a and {i.name for i in new.days[0].items} == b)
+        if kind == "clear_day":
+            return f"clear day {last + 1}", ["clear_day"], lambda new: not new.days[last].items
+        if kind == "remove" and first:
+            return f"remove {first.name}", ["remove_item"], lambda new: all(i.name != first.name for _, i in new.all_items())
+        if kind == "multi" and first and spare:
+            return (f"remove {first.name} and add {spare.name} to day {last + 1}", ["remove_item", "add_place"],
+                    lambda new: all(i.name != first.name for _, i in new.all_items()) and on_day(new, spare.name, last))
+        return "", [], None
+
+    crud_rows = []
+    for name, (req, base, _ctxs) in list(created.items()):
+        if suite == "full" and not name.endswith(("/classic", "/vegan-adventure", "/night-owls", "/shoppers")):
+            continue
+        if suite != "full" and not name.endswith("/classic"):
+            continue
+        ctx0 = await build_context(req, get_tools())
+        for kind in ds.CRUD_KINDS:
+            msg, expected_kinds, check = make_crud_message(kind, base, ctx0)
+            if not msg:
+                continue
+            routed = parse_message(msg, base, req.budget_inr, req.pace, travelers=req.travelers)
+            router_ok = [c.kind for c in routed.request.changes] == expected_kinds
+            row: dict[str, Any] = {"case": f"{name}:{kind}", "router_ok": router_ok}
+            if router_ok:
+                async for ev in run_workflow({"mode": "change", "request": req, "base": base, "change": routed.request,
+                                              "weights": {}}, "edit"):
+                    if ev["type"] == "result":
+                        st = ev["state"]
+                        row.update({"done": bool(check(st["draft"])), "hard_violations": len(errors(st["violations"])),
+                                    "stability": st["diff"].stability, "latency_ms": ev["metrics"]["latency_ms"]})
+            crud_rows.append(row)
+
+    report["crud"] = {
+        "cases": len(crud_rows),
+        "router_accuracy": rate([r["router_ok"] for r in crud_rows]),
+        "done_rate": rate([bool(r.get("done")) for r in crud_rows]),
+        "hard_violation_rate": rate([r.get("hard_violations", 0) > 0 for r in crud_rows if r["router_ok"]]),
+        "stability_mean": mean([r["stability"] for r in crud_rows if "stability" in r and r["case"].split(":")[1] not in
+                                ("swap_days", "clear_day")]),
+        "latency_ms_p50": pct([r["latency_ms"] for r in crud_rows if r.get("latency_ms")], 0.5),
+        "failures": [r["case"] for r in crud_rows if not r["router_ok"] or not r.get("done") or r.get("hard_violations")][:8],
+    }
+
     # ------------------------------------------------------------------ 3. retrieval ablation
     ret: dict[str, dict[str, float]] = {}
     for mode in ("keyword", "vector", "hybrid"):
@@ -265,6 +341,22 @@ def render_markdown(r: dict[str, Any]) -> str:
     ]
     if ch["failures"]:
         lines += ["Cases that did not fully pass: " + ", ".join(f"`{f}`" for f in ch["failures"]), ""]
+    if "crud" in r:
+        cr = r["crud"]
+        lines += [
+            "## 2b. Itinerary edits from plain prompts (create, update, delete)", "",
+            "Move, retime, resize, annotate, add a named place, add your own entry (a flight), swap days, clear a day, "
+            "remove, and a two-step message, generated from each base plan and parsed by the offline router.", "",
+            "| Metric | Value |", "|---|---|",
+            f"| Cases | {cr['cases']} |",
+            f"| Router accuracy (exact change kinds) | {_fmt(cr['router_accuracy'])} |",
+            f"| Edit landed as asked | {_fmt(cr['done_rate'])} |",
+            f"| Edits with a hard violation | {_fmt(cr['hard_violation_rate'])} |",
+            f"| Stability: other stops left in place (single-stop edits, mean) | {_fmt(cr['stability_mean'])} |",
+            f"| Latency p50 | {_fmt(cr['latency_ms_p50'], 'ms')} |", "",
+        ]
+        if cr["failures"]:
+            lines += ["Cases that did not fully pass: " + ", ".join(f"`{f}`" for f in cr["failures"]), ""]
     lines += [
         "## 3. Retrieval (travel guides)", "", f"{rt['queries']} labelled queries, embedder `{r['embedder']}`.", "",
         "| Mode | Recall@1 | Recall@3 | MRR |", "|---|---|---|---|",

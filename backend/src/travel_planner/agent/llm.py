@@ -7,7 +7,7 @@ instead of failing when the provider is down, rate-limited or returns something 
 from __future__ import annotations
 
 import time
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -66,6 +66,32 @@ class LLM:
             last_err = LLMError("model returned no parsable output")
             messages = [*messages, {"role": "user", "content": "Your last reply was not valid for the required schema. Reply again with valid JSON only."}]
         raise LLMError(f"{label} failed: {last_err}") from (last_err if isinstance(last_err, Exception) else None)
+
+
+    async def run_tools(self, *, model: str, messages: list[dict], tools: list[dict], max_tokens: int = 1200,
+                        label: str = "agent") -> Any:
+        """One tool-calling turn. The model must call a tool (strict schemas, one call at a time); returns the
+        assistant message. Raises LLMError on any provider failure so the caller can fall back to the rules."""
+        if not self.enabled:
+            raise LLMError("LLM disabled")
+        tracker = current_tracker()
+        started = time.perf_counter()
+        try:
+            resp = await self._get_client().chat.completions.create(
+                model=model, messages=messages, tools=tools, tool_choice="required", parallel_tool_calls=False,
+                max_completion_tokens=max_tokens,
+            )
+        except Exception as exc:  # network, auth, rate limit, bad request
+            tracker.add_tool(f"llm:{label}", time.perf_counter() - started, error=True)
+            raise LLMError(f"{label} failed: {exc}") from exc
+        usage = getattr(resp, "usage", None)
+        if usage:
+            tracker.add_llm(model, usage.prompt_tokens, usage.completion_tokens)
+        tracker.add_tool(f"llm:{label}", time.perf_counter() - started)
+        msg = resp.choices[0].message
+        if getattr(msg, "refusal", None):
+            raise LLMError(f"model refused: {msg.refusal}")
+        return msg
 
 
 _llm = LLM()

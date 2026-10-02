@@ -1,12 +1,12 @@
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
-import { Ban, Lightbulb, Lock, ThumbsDown, ThumbsUp, TriangleAlert, Umbrella, Sun as SunIcon } from "lucide-react";
+import { Ban, Lightbulb, Lock, Pin, StickyNote, ThumbsDown, ThumbsUp, TriangleAlert, Umbrella, Sun as SunIcon } from "lucide-react";
 import { useMemo } from "react";
 import { dayName, duration, hhmm, inr, shortDate, titleCase } from "../../lib/format";
 import { ease, spring } from "../../lib/motion";
 import type { Day, Item, ItemChange, Itinerary } from "../../lib/types";
-import { Citations, FreeTime, KindBadge, TravelLeg, WeatherGlyph, categoryIcon } from "./parts";
+import { CUSTOM_LABEL, Citations, FreeTime, KindBadge, TravelLeg, WeatherGlyph, itemIcon } from "./parts";
 
-type Flag = "added" | "moved" | "retimed";
+type Flag = "added" | "moved" | "retimed" | "edited";
 
 export interface TimelineProps {
   itinerary: Itinerary;
@@ -83,7 +83,8 @@ export function DayHeader({ day }: { day: Day }) {
 }
 
 function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item | null; p: TimelineProps }) {
-  const Icon = categoryIcon(it.category);
+  const Icon = itemIcon(it);
+  const own = !!it.custom;
   const flag = p.flags?.get(it.id);
   const hot = p.hoverId === it.id;
   const flash = p.flash?.has(it.id);
@@ -105,13 +106,20 @@ function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item
       {gap >= 75 && <FreeTime minutes={gap} />}
       <div className="grid grid-cols-[3.4rem_minmax(0,1fr)] gap-x-2 sm:grid-cols-[4.5rem_minmax(0,1fr)] sm:gap-x-3">
         <div className="pt-4 text-right">
-          <p className="mono text-[15px] font-semibold leading-none sm:text-[17px]">{hhmm(it.start)}</p>
+          <p className="mono inline-flex items-center gap-1 text-[15px] font-semibold leading-none sm:text-[17px]">
+            {it.fixed_start != null && (
+              <span title="Fixed time" aria-label="Fixed time" className="text-sea">
+                <Pin size={11} />
+              </span>
+            )}
+            {hhmm(it.start)}
+          </p>
           <p className="mono mt-1 text-xs text-faint">{hhmm(it.end)}</p>
           <p className="label mt-2 !text-[10px]">{SLOT_LABEL[it.slot]}</p>
         </div>
         <div
           className={`group relative rounded-2xl border bg-surface p-4 transition-[border-color,box-shadow] ${flash ? "glow-once" : ""} ${
-            hot ? "border-sea shadow-[var(--shadow-lg)]" : flag === "added" ? "border-good/60" : flag ? "border-warn/50" : "border-line shadow-[var(--shadow)]"
+            hot ? "border-sea shadow-[var(--shadow-lg)]" : flag === "added" ? "border-good/60" : flag ? "border-warn/50" : own ? "border-dashed border-sea/50 shadow-[var(--shadow)]" : "border-line shadow-[var(--shadow)]"
           }`}
         >
           <div className="flex items-start gap-3">
@@ -127,12 +135,26 @@ function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item
                     <Lock size={10} /> locked
                   </span>
                 )}
+                {own && <span className="mono rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted">your entry</span>}
               </div>
               <p className="mt-0.5 text-[13px] text-muted">
-                {titleCase(it.category)} · {it.indoor ? "indoors" : "outdoors"}
-                {it.tags.length > 0 && <> · {it.tags.slice(0, 3).join(", ")}</>}
+                {own ? (
+                  <>
+                    {CUSTOM_LABEL[it.tags[0]] ?? "Plan"} · {duration(it.end - it.start)}
+                  </>
+                ) : (
+                  <>
+                    {titleCase(it.category)} · {it.indoor ? "indoors" : "outdoors"}
+                    {it.tags.length > 0 && <> · {it.tags.slice(0, 3).join(", ")}</>}
+                  </>
+                )}
               </p>
-              {it.why && <p className="mt-2 text-[14px] leading-snug text-ink/90">{it.why}</p>}
+              {it.why && !own && <p className="mt-2 text-[14px] leading-snug text-ink/90">{it.why}</p>}
+              {it.note && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1.5 text-[13px] leading-snug">
+                  <StickyNote size={13} className="mt-0.5 shrink-0 text-warn" /> {it.note}
+                </p>
+              )}
               {it.warnings.length > 0 && (
                 <ul className="mt-2 flex flex-col gap-1">
                   {it.warnings.map((w) => (
@@ -143,22 +165,28 @@ function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item
                 </ul>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="mono text-sm font-medium">{it.est_cost_inr === 0 ? "Free" : inr(it.est_cost_inr)}</span>
-                <Citations ids={it.source_ids} sources={p.itinerary.sources} />
+                {!(own && it.est_cost_inr === 0) && <span className="mono text-sm font-medium">{it.est_cost_inr === 0 ? "Free" : inr(it.est_cost_inr)}</span>}
+                {!own && <Citations ids={it.source_ids} sources={p.itinerary.sources} />}
                 {!p.readOnly && (
                   <div className="ml-auto flex items-center gap-0.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100">
-                    <IconBtn label="I like this" active={fb === "up"} onClick={() => p.onFeedback?.(it, "up")}>
-                      <ThumbsUp size={15} />
-                    </IconBtn>
-                    <IconBtn label="Not for me" active={fb === "down"} tone="signal" onClick={() => p.onFeedback?.(it, "down")}>
-                      <ThumbsDown size={15} />
-                    </IconBtn>
+                    {!own && (
+                      <>
+                        <IconBtn label="I like this" active={fb === "up"} onClick={() => p.onFeedback?.(it, "up")}>
+                          <ThumbsUp size={15} />
+                        </IconBtn>
+                        <IconBtn label="Not for me" active={fb === "down"} tone="signal" onClick={() => p.onFeedback?.(it, "down")}>
+                          <ThumbsDown size={15} />
+                        </IconBtn>
+                      </>
+                    )}
                     <IconBtn label={it.locked ? "Unlock" : "Lock so re-plans leave it alone"} active={it.locked} onClick={() => p.onLock?.(it)}>
                       <Lock size={15} />
                     </IconBtn>
-                    <IconBtn label="Mark as closed or sold out" tone="signal" onClick={() => p.onClosed?.(it)}>
-                      <Ban size={15} />
-                    </IconBtn>
+                    {!own && (
+                      <IconBtn label="Mark as closed or sold out" tone="signal" onClick={() => p.onClosed?.(it)}>
+                        <Ban size={15} />
+                      </IconBtn>
+                    )}
                   </div>
                 )}
               </div>

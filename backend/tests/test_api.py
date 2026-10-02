@@ -105,3 +105,87 @@ def test_users_cannot_read_each_others_trips(client, auth):
     trip_id = next(e for e in create_trip(client, auth) if e["type"] == "itinerary")["trip_id"]
     other = client.post("/api/auth/register", json={"email": "o@example.com", "password": "pw-pw-pw-pw"}).json()["token"]
     assert client.get(f"/api/trips/{trip_id}", headers={"authorization": f"Bearer {other}"}).status_code == 404
+
+
+# ----------------------------------------------------------------------------- itinerary CRUD through chat
+
+
+def _trip(client, auth):
+    final = next(e for e in create_trip(client, auth) if e["type"] == "itinerary")
+    return final["trip_id"], final["itinerary"]
+
+
+def _chat(client, auth, trip_id, message):
+    r = client.post(f"/api/trips/{trip_id}/chat", json={"message": message}, headers=auth)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _detail(client, auth, trip_id):
+    return client.get(f"/api/trips/{trip_id}", headers=auth).json()
+
+
+def test_move_then_yes_applies_then_undo_restores(client, auth):
+    trip_id, itin = _trip(client, auth)
+    name = itin["days"][0]["items"][0]["name"]
+    r = _chat(client, auth, trip_id, f"Move {name} to day 3")
+    assert r["intent"] == "edit" and r["proposal"]["version_id"]
+    assert any(c["kind"] == "moved" and c["name"] == name for c in r["proposal"]["diff"]["changes"])
+
+    r = _chat(client, auth, trip_id, "yes")
+    assert r["intent"] == "applied" and r["applied_version_id"]
+    d = _detail(client, auth, trip_id)
+    assert d["version"]["version_no"] == 2
+    assert name in [i["name"] for i in d["itinerary"]["days"][2]["items"]]
+
+    r = _chat(client, auth, trip_id, "undo")
+    assert r["intent"] == "revert" and r["proposal"]["version_id"]
+    assert _chat(client, auth, trip_id, "apply it")["intent"] == "applied"
+    d = _detail(client, auth, trip_id)
+    assert name in [i["name"] for i in d["itinerary"]["days"][0]["items"]]
+    assert d["version"]["version_no"] == 3
+
+
+def test_no_discards_the_waiting_proposal(client, auth):
+    trip_id, _ = _trip(client, auth)
+    _chat(client, auth, trip_id, "clear day 2")
+    assert len(_detail(client, auth, trip_id)["proposals"]) == 1
+    assert "Discarded" in _chat(client, auth, trip_id, "no")["reply"]
+    assert _detail(client, auth, trip_id)["proposals"] == []
+
+
+def test_custom_entry_survives_later_edits_and_settings_are_restored(client, auth):
+    trip_id, _ = _trip(client, auth)
+    r = _chat(client, auth, trip_id, "add a flight to Mumbai at 18:00 on day 4")
+    assert r["proposal"]["version_id"]
+    _chat(client, auth, trip_id, "yes")
+    r = _chat(client, auth, trip_id, "make it more relaxed")
+    _chat(client, auth, trip_id, "yes")
+    d = _detail(client, auth, trip_id)
+    flight = [i for i in d["itinerary"]["days"][3]["items"] if i["name"] == "Flight to Mumbai"]
+    assert flight and flight[0]["custom"] and flight[0]["start"] == 18 * 60
+    assert d["trip"]["request"]["pace"] == "relaxed"
+
+    versions = client.get(f"/api/trips/{trip_id}/versions", headers=auth).json()
+    v1 = next(v for v in versions if v["version_no"] == 1)
+    r = client.post(f"/api/trips/{trip_id}/versions/{v1['id']}/restore", headers=auth).json()
+    vid = r["proposal"]["version_id"]
+    assert client.post(f"/api/trips/{trip_id}/versions/{vid}/apply", headers=auth).status_code == 200
+    d = _detail(client, auth, trip_id)
+    assert d["trip"]["request"]["pace"] == "balanced"  # settings come back with the stops
+    assert not any(i["custom"] for day in d["itinerary"]["days"] for i in day["items"])
+
+
+def test_clarifying_question_is_completed_by_the_next_message(client, auth):
+    trip_id, itin = _trip(client, auth)
+    r = _chat(client, auth, trip_id, "move it to day 2")
+    assert r["intent"] == "clarify" and r["options"]
+    target = next(o for o in r["options"] if o not in [i["name"] for i in itin["days"][1]["items"]])
+    r = _chat(client, auth, trip_id, target)
+    assert r["intent"] == "edit" and r["proposal"]["version_id"]
+    assert any(c["name"] == target and c["kind"] == "moved" for c in r["proposal"]["diff"]["changes"])
+
+
+def test_restore_rejects_unknown_versions(client, auth):
+    trip_id, _ = _trip(client, auth)
+    assert client.post(f"/api/trips/{trip_id}/versions/nope/restore", headers=auth).status_code == 404

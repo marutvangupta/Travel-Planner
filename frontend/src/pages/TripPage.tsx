@@ -68,7 +68,7 @@ export default function TripPage() {
   const shown: Itinerary | null = preview?.itinerary ?? base;
 
   const flags = useMemo(() => {
-    const m = new Map<string, "added" | "moved" | "retimed">();
+    const m = new Map<string, "added" | "moved" | "retimed" | "edited">();
     if (!preview || !shown) return m;
     const byPlace = new Map(preview.diff.changes.map((c) => [c.place_id, c.kind]));
     for (const d of shown.days) for (const it of d.items) {
@@ -83,6 +83,7 @@ export default function TripPage() {
     if (!preview || !shown) return s;
     for (const d of shown.days) if (d.items.some((i) => flags.has(i.id))) s.add(d.index);
     for (const r of removed) if (r.day_from != null) s.add(r.day_from);
+    for (const c of preview.diff.changes) if (c.kind === "edited" && !c.place_id && c.day_from != null) s.add(c.day_from);
     return s;
   }, [preview, shown, flags, removed]);
 
@@ -133,6 +134,24 @@ export default function TripPage() {
     setPreview(p);
     const first = p.diff.changes.find((c) => c.day_to != null || c.day_from != null);
     if (first) setDayIndex(first.day_to ?? first.day_from ?? 0);
+  };
+
+  const restore = async (v: VersionRow) => {
+    setBusyId(v.id);
+    try {
+      const r = await api<{ proposal: Proposal | null }>(`/trips/${id}/versions/${v.id}/restore`, { method: "POST" });
+      await load();
+      if (r.proposal?.version_id) {
+        showPreview(r.proposal);
+        toast(`Previewing version ${v.version_no}. Accept it to switch back.`, "info");
+      } else {
+        toast("That version is the same as your current plan.", "info");
+      }
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not restore that version", "error");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const sendFeedback = async (it: Item, signal: "up" | "down") => {
@@ -311,7 +330,7 @@ export default function TripPage() {
             </AnimatePresence>
           </section>
 
-          <aside className="flex flex-col gap-4 lg:sticky lg:top-[5rem] lg:h-[calc(100vh-6.5rem)] lg:min-h-[640px]">
+          <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-[5rem] lg:h-[calc(100vh-6.5rem)] lg:min-h-[640px]">
             <div className="card relative overflow-hidden">
               <div className="aspect-[640/520] max-h-[330px] w-full">
                 <ChartMap days={shown.days} active={mapAll ? "all" : day} base={shown.base} hoverId={hoverId} onHover={setHoverId} highlight={new Set(flags.keys())} />
@@ -339,12 +358,12 @@ export default function TripPage() {
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div key={panel} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="h-full">
                     {panel === "chat" && (
-                      <ChatPanel tripId={id} messages={detail.messages} itinerary={base} previewId={preview?.version_id ?? null} onPreview={showPreview} onAccept={accept} onReject={reject} onAfterSend={load} busyId={busyId} />
+                      <ChatPanel tripId={id} messages={detail.messages} itinerary={base} previewId={preview?.version_id ?? null} onPreview={showPreview} onAccept={accept} onReject={reject} onAfterSend={load} onApplied={() => setPreview(null)} busyId={busyId} />
                     )}
                     {panel === "whatif" && (
                       <WhatIfPanel tripId={id} budget={trip.budget_inr} previewId={preview?.version_id ?? null} onPreview={showPreview} onAccept={accept} busyId={busyId} onAfterRun={load} />
                     )}
-                    {panel === "history" && <HistoryPanel versions={versions} />}
+                    {panel === "history" && <HistoryPanel versions={versions} onRestore={restore} busyId={busyId} />}
                   </motion.div>
                 </AnimatePresence>
               </div>

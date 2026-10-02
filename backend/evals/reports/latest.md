@@ -24,7 +24,7 @@
 | Router accuracy (intent and change type) | 100.0% |
 | Re-plans with a hard violation (excluding kept-with-warning rain) | 0.0% |
 | Affected-stop precision / recall (rain, closure) | 100.0% / 100.0% |
-| Stability: other stops left in place (mean / p10) | 96.4% / 85.7% |
+| Stability: other stops left in place (mean / p10) | 99.0% / 100.0% |
 | Rain: wet day left fully indoor | 50.0% |
 | Rain: affected outdoor stops replaced or moved (mean share) | 64.6% |
 | Re-plans that kept an outdoor stop on a wet day with a warning | 8 of 96 |
@@ -33,6 +33,19 @@
 | Avoid-category respected | 100.0% |
 | Pace respected | 100.0% |
 | Late start respected | 100.0% |
+
+## 2b. Itinerary edits from plain prompts (create, update, delete)
+
+Move, retime, resize, annotate, add a named place, add your own entry (a flight), swap days, clear a day, remove, and a two-step message, generated from each base plan and parsed by the offline router.
+
+| Metric | Value |
+|---|---|
+| Cases | 158 |
+| Router accuracy (exact change kinds) | 100.0% |
+| Edit landed as asked | 100.0% |
+| Edits with a hard violation | 0.0% |
+| Stability: other stops left in place (single-stop edits, mean) | 96.2% |
+| Latency p50 | 8 ms |
 
 ## 3. Retrieval (travel guides)
 
@@ -51,11 +64,11 @@
 | Tool success rate | 100.0% |
 | Tool calls per plan (mean) | 9.17 |
 | Cache hit rate | 56.4% |
-| Create latency p50 / p95 | 19 ms / 59 ms |
-| Re-plan latency p50 / p95 | 6 ms / 11 ms |
+| Create latency p50 / p95 | 23 ms / 52 ms |
+| Re-plan latency p50 / p95 | 8 ms / 14 ms |
 | Tokens per plan (mean) | 0 |
 | Cost per plan (mean) | $0.0000 |
 
-Per-node median time (ms): intake 0, research 10, plan 4, validate 0, ground 0
+Per-node median time (ms): intake 0, research 12, plan 6, validate 0, ground 0
 
 > The built-in planner is deterministic and needs no API keys. Latency here excludes network calls to LLMs and map providers; run with `--live` and an `OPENAI_API_KEY` to measure those.

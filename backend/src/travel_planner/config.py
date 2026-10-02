@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model_plan: str = "gpt-4.1"
     openai_model_fast: str = "gpt-4.1-mini"
+    openai_model_agent: str | None = None  # the chat edit agent; defaults to the planning model
+    agent_max_turns: int = 8
     openai_embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
     model_prices_json: str | None = None

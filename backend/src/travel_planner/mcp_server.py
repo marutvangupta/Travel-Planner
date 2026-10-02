@@ -41,6 +41,12 @@ async def search_places(destination: str, lat: float, lng: float, interests: lis
 
 
 @mcp.tool()
+async def find_place(destination: str, query: str, lat: float, lng: float, max_results: int = 3) -> dict:
+    """Look up a specific place by name in a destination (for adding a named stop to an itinerary)."""
+    return await _guard(core.find_place(destination, query, lat, lng, max_results))
+
+
+@mcp.tool()
 async def get_place_details(place_ids: list[str]) -> dict:
     """Refresh details (hours, status) for known place ids."""
     return await _guard(core.get_place_details(place_ids))

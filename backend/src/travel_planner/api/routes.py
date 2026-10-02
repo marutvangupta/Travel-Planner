@@ -234,6 +234,17 @@ def apply(trip_id: str, version_id: str, db: DB, user: CurrentUser) -> dict:
     return {"ok": True, "version_id": v.id}
 
 
+@router.post("/trips/{trip_id}/versions/{version_id}/restore")
+async def restore(trip_id: str, version_id: str, db: DB, user: CurrentUser) -> dict:
+    """Propose going back to an earlier applied version (its stops and saved trip settings)."""
+    trip = _own_trip(db, user, trip_id)
+    v = orch.get_version(db, trip.id, version_id)
+    if not v or v.status != "applied":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Version not found")
+    proposal = await orch.revert_to(db, trip, v, reason=f"Go back to version {v.version_no}")
+    return {"proposal": proposal.model_dump(mode="json") if proposal else None}
+
+
 @router.post("/trips/{trip_id}/versions/{version_id}/reject")
 def reject(trip_id: str, version_id: str, db: DB, user: CurrentUser) -> dict:
     trip = _own_trip(db, user, trip_id)

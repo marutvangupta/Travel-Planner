@@ -1,10 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, Eye, History, MessageSquare, Send, Sparkles, X, Zap } from "lucide-react";
+import { ArrowRight, Check, Eye, History, ListChecks, MessageSquare, RotateCcw, Send, Sparkles, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import { inr } from "../../lib/format";
 import { rise, spring, stagger } from "../../lib/motion";
-import type { ChatMessage, ChatReply, Diff, Itinerary, Proposal, VersionRow } from "../../lib/types";
+import type { ChatIntent, ChatMessage, ChatReply, Diff, Itinerary, Proposal, VersionRow } from "../../lib/types";
 import { Button, CountUp, inputCls } from "../ui";
 import { Citations, KindBadge } from "./parts";
 
@@ -44,7 +44,7 @@ export function ProposalCard({
         )}
         <ul className="flex flex-col gap-1.5">
           {diff.changes.slice(0, 6).map((c) => (
-            <li key={c.kind + c.place_id} className="flex items-center gap-2 text-[13px]">
+            <li key={c.kind + c.place_id + c.name} className="flex items-center gap-2 text-[13px]">
               <KindBadge kind={c.kind} />
               <span className="min-w-0 flex-1 truncate">{c.name}</span>
               <span className="mono shrink-0 text-xs text-faint">{c.detail}</span>
@@ -85,12 +85,30 @@ interface Bubble {
   text: string;
   proposal?: Proposal | null;
   citations?: string[];
+  steps?: string[];
+  options?: string[];
+  intent?: ChatIntent | string;
 }
 
-const THINKING = ["Reading your itinerary", "Checking opening hours", "Finding what is affected", "Re-planning only what changed", "Verifying the result"];
+const THINKING = ["Reading your itinerary", "Looking things up", "Making the change", "Checking hours, travel and budget", "Preparing a preview"];
+
+function Steps({ steps }: { steps: string[] }) {
+  return (
+    <details className="group mt-2 text-xs text-muted">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium hover:text-ink">
+        <ListChecks size={13} /> What I did ({steps.length})
+      </summary>
+      <ol className="mt-1.5 flex list-decimal flex-col gap-0.5 pl-5">
+        {steps.map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ol>
+    </details>
+  );
+}
 
 export function ChatPanel({
-  tripId, messages, itinerary, previewId, onPreview, onAccept, onReject, onAfterSend, busyId,
+  tripId, messages, itinerary, previewId, onPreview, onAccept, onReject, onAfterSend, onApplied, busyId,
 }: {
   tripId: string;
   messages: ChatMessage[];
@@ -100,9 +118,17 @@ export function ChatPanel({
   onAccept: (p: Proposal) => void;
   onReject: (versionId: string) => void;
   onAfterSend: () => void;
+  onApplied?: (versionId: string) => void;
   busyId: string | null;
 }) {
-  const initial = useMemo<Bubble[]>(() => messages.map((m) => ({ key: m.id, role: m.role, text: m.content, citations: m.payload?.citations })), [messages]);
+  const initial = useMemo<Bubble[]>(
+    () =>
+      messages.map((m) => ({
+        key: m.id, role: m.role, text: m.content, citations: m.payload?.citations, steps: m.payload?.steps, options: m.payload?.options,
+        intent: m.payload?.intent,
+      })),
+    [messages],
+  );
   const [local, setLocal] = useState<Bubble[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -121,13 +147,9 @@ export function ChatPanel({
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [local.length, busy, initial.length]);
 
-  const outdoor = itinerary.days.flatMap((d) => d.items).find((i) => !i.indoor);
-  const suggestions = [
-    outdoor ? `Swap ${outdoor.name} for something indoors` : "Add more food experiences",
-    "Make it more relaxed",
-    "Is day 1 too packed?",
-    "How much will this cost?",
-  ];
+  const nDays = itinerary.days.length;
+  const outdoor = itinerary.days.flatMap((d) => d.items).find((i) => !i.indoor && !i.custom);
+  const firstStop = itinerary.days[0]?.items.find((i) => !i.custom);
 
   const send = async (text: string) => {
     const msg = text.trim();
@@ -138,8 +160,12 @@ export function ChatPanel({
     setStep(0);
     try {
       const r = await api<ChatReply>(`/trips/${tripId}/chat`, { method: "POST", json: { message: msg } });
-      setLocal((l) => [...l, { key: `a${Date.now()}`, role: "assistant", text: r.reply, proposal: r.proposal, citations: r.citations }]);
+      setLocal((l) => [
+        ...l,
+        { key: `a${Date.now()}`, role: "assistant", text: r.reply, proposal: r.proposal, citations: r.citations, steps: r.steps, options: r.options, intent: r.intent },
+      ]);
       if (r.proposal?.version_id) onPreview(r.proposal);
+      if (r.intent === "applied" && r.applied_version_id) onApplied?.(r.applied_version_id);
     } catch (e) {
       setLocal((l) => [...l, { key: `e${Date.now()}`, role: "assistant", text: e instanceof Error ? e.message : "Something went wrong." }]);
     } finally {
@@ -153,13 +179,28 @@ export function ChatPanel({
   };
 
   const all = [...initial.filter((b) => !local.some((l) => l.text === b.text && l.role === b.role)), ...local];
+  const last = all[all.length - 1];
+  const quickReplies = !busy && last?.role === "assistant" ? (last.options ?? []) : [];
+  const justApplied = last?.role === "assistant" && last.intent === "applied";
+  const suggestions = [
+    justApplied ? "Undo the last change" : null,
+    firstStop && nDays > 1 ? `Move ${firstStop.name} to day 2` : null,
+    `Add a flight home at 18:00 on day ${nDays}`,
+    firstStop ? `Add a note to ${firstStop.name}: book tickets` : null,
+    outdoor ? `Swap ${outdoor.name} for something indoors` : "Add more food experiences",
+    nDays > 1 ? "Swap day 1 and day 2" : null,
+    "Is day 1 too packed?",
+  ].filter((x): x is string => !!x);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {all.length === 0 && (
           <div className="mb-4 rounded-2xl border border-dashed border-line p-4">
             <p className="display-wide mb-1 text-lg">Change anything in plain words</p>
-            <p className="text-sm text-muted">Swap a stop, cut the budget, slow the pace, or tell me it is going to rain. I will show the change before it applies.</p>
+            <p className="text-sm text-muted">
+              Add, move, retime or remove stops, add your own plans like a flight or a dinner, clear or swap days, leave notes, or ask a
+              question. I show every change before it applies; say “yes” to accept or “undo” to go back.
+            </p>
           </div>
         )}
         <motion.ul variants={stagger(0.04)} initial="hidden" animate="show" className="m-0 flex flex-col gap-3 p-0">
@@ -172,7 +213,17 @@ export function ChatPanel({
                     <Citations ids={b.citations} sources={itinerary.sources} />
                   </div>
                 )}
+                {b.role === "assistant" && b.steps && b.steps.length > 0 && <Steps steps={b.steps} />}
               </div>
+              {b === last && quickReplies.length > 0 && (
+                <div className="flex max-w-[92%] flex-wrap gap-1.5" role="group" aria-label="Quick replies">
+                  {quickReplies.map((o) => (
+                    <button key={o} type="button" onClick={() => send(o)} className="rounded-full border border-sea/50 bg-sea-soft px-3 py-1.5 text-xs font-semibold text-sea transition-colors hover:bg-sea hover:text-sea-ink">
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              )}
               {b.proposal && b.proposal.version_id && !dismissed.has(b.proposal.version_id) && (
                 <div className="w-full">
                   <ProposalCard
@@ -219,7 +270,7 @@ export function ChatPanel({
           ))}
         </div>
         <form onSubmit={onSubmit} className="flex gap-2">
-          <input aria-label="Message" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Swap the fort for something indoors…" className={inputCls} maxLength={600} />
+          <input aria-label="Message" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Add, move or remove anything…" className={inputCls} maxLength={600} />
           <Button type="submit" disabled={!input.trim()} loading={busy} aria-label="Send" className="!px-3.5">
             <Send size={16} />
           </Button>
@@ -428,9 +479,9 @@ export function WhatIfPanel({
 
 /* ------------------------------------------------------------------------------------- history */
 
-const TYPE_LABEL: Record<string, string> = { create: "Created", edit: "Edited", replan: "Re-planned", whatif: "What if" };
+const TYPE_LABEL: Record<string, string> = { create: "Created", edit: "Edited", replan: "Re-planned", whatif: "What if", revert: "Restored" };
 
-export function HistoryPanel({ versions }: { versions: VersionRow[] }) {
+export function HistoryPanel({ versions, onRestore, busyId }: { versions: VersionRow[]; onRestore?: (v: VersionRow) => void; busyId?: string | null }) {
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
       <p className="display-wide mb-1 text-lg">Version history</p>
@@ -447,6 +498,11 @@ export function HistoryPanel({ versions }: { versions: VersionRow[] }) {
             </div>
             <p className="mt-1 text-[13px] leading-snug">{v.reason}</p>
             {v.diff && <p className="mono mt-0.5 text-xs text-faint">{v.diff.summary}</p>}
+            {onRestore && !v.current && v.status === "applied" && (
+              <Button size="sm" variant="ghost" className="-ml-2 mt-1" loading={busyId === v.id} onClick={() => onRestore(v)} icon={<RotateCcw size={13} />}>
+                Restore
+              </Button>
+            )}
           </motion.li>
         ))}
       </ol>

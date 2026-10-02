@@ -84,6 +84,30 @@ async def get_place_details(place_ids: list[str]) -> dict:
     return await run_tool("get_place_details", {"ids": sorted(place_ids), "m": data_mode()}, TTL_PLACES, fn)
 
 
+async def find_place(destination: str, query: str, lat: float, lng: float, max_results: int = 3) -> dict:
+    """Look a place up by name (for "add <place> to day 2" when it is not among the planned candidates)."""
+    q = query.strip()
+
+    async def fn() -> dict:
+        if not q:
+            return {"places": []}
+        if not get_settings().google_enabled:
+            words = {w for w in q.lower().split() if len(w) > 2}
+            scored = []
+            for p in demo.all_places(destination):
+                name = p.name.lower()
+                score = 3 if q.lower() in name else len(words & set(name.replace(",", " ").split()))
+                if score:
+                    scored.append((score, p))
+            scored.sort(key=lambda t: -t[0])
+            return {"places": [p.model_dump(mode="json") for _, p in scored[:max_results]], "mode": "demo"}
+        places = await google.search_text(f"{q} in {destination}", lat, lng, 30000, max_results)
+        return {"places": [p.model_dump(mode="json") for p in places[:max_results]], "mode": "live"}
+
+    return await run_tool("find_place", {"d": destination.lower(), "q": q.lower(), "n": max_results, "m": data_mode()},
+                          TTL_PLACES, fn)
+
+
 async def compute_route_matrix(points: list[tuple[float, float]]) -> dict:
     pts = [(round(a, 5), round(b, 5)) for a, b in points]
 
