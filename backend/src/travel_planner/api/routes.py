@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
@@ -26,7 +26,8 @@ from ..models import (
 from ..schemas import INTERESTS, Itinerary, TripRequest
 from ..services import memory
 from ..services import orchestrator as orch
-from ..tools.core import data_mode
+from ..tools.common import ToolFailure
+from ..tools.core import data_mode, suggest_destinations
 from ..tools.demo_data import DESTINATIONS
 from .security import CurrentUser, enforce_quota, hash_password, make_token, verify_password
 
@@ -48,6 +49,15 @@ def meta() -> dict:
         "destinations": [m["name"] for m in DESTINATIONS.values()] if not s.google_enabled else None,
         "rain_threshold": s.rain_threshold_pct,
     }
+
+
+@router.get("/destinations")
+async def destinations(user: CurrentUser, q: Annotated[str, Query(max_length=80)] = "") -> dict:
+    """Suggestions for the destination field. A provider failure is reported, not raised: typing any city still works."""
+    try:
+        return await suggest_destinations(q)
+    except ToolFailure as exc:
+        return {"suggestions": [], "mode": data_mode(), "error": exc.message}
 
 
 class Credentials(BaseModel):

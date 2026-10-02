@@ -11,6 +11,7 @@ from ...schemas import Geo, Hours, Place, RouteCell, Source
 from ..common import ToolFailure, http_json, now_iso
 
 PLACES_SEARCH = "https://places.googleapis.com/v1/places:searchText"
+PLACES_AUTOCOMPLETE = "https://places.googleapis.com/v1/places:autocomplete"
 PLACES_DETAIL = "https://places.googleapis.com/v1/places/"
 ROUTES_MATRIX = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
 GEOCODE = "https://maps.googleapis.com/maps/api/geocode/json"
@@ -86,6 +87,28 @@ async def geocode(destination: str) -> Geo:
         source=Source(id=f"gplaces:geo:{r.get('place_id', destination)}", provider="google-geocoding",
                       title=r["formatted_address"], retrieved_at=now_iso()),
     )
+
+
+async def autocomplete_cities(query: str, limit: int) -> list[dict]:
+    """City suggestions for the destination field (Places Autocomplete (New), restricted to cities)."""
+    data = await http_json("POST", PLACES_AUTOCOMPLETE, headers=_headers(), json={
+        "input": query, "includedPrimaryTypes": ["(cities)"], "languageCode": "en",
+    })
+    out: list[dict] = []
+    for s in data.get("suggestions", []):
+        p = s.get("placePrediction")
+        if not p:
+            continue
+        fmt = p.get("structuredFormat") or {}
+        name = (fmt.get("mainText") or {}).get("text", "")
+        detail = (fmt.get("secondaryText") or {}).get("text", "")
+        label = (p.get("text") or {}).get("text") or ", ".join(x for x in (name, detail) if x)
+        if not label:
+            continue
+        out.append({"label": label, "name": name or label, "detail": detail})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _hours(raw: dict | None) -> Hours | None:

@@ -17,6 +17,7 @@ from .providers import demo, google, open_meteo
 from .providers import frankfurter as fx
 
 TTL_GEO = 24 * 3600
+TTL_SUGGEST = 24 * 3600
 TTL_PLACES = 3600  # Google content: keep short, persist only place_id
 TTL_ROUTES = 6 * 3600
 TTL_WEATHER = 3600
@@ -33,6 +34,20 @@ async def geocode(destination: str) -> dict:
         return geo.model_dump(mode="json")
 
     return await run_tool("geocode", {"d": destination.lower(), "m": data_mode()}, TTL_GEO, fn)
+
+
+async def suggest_destinations(query: str, limit: int = 6) -> dict:
+    """Destination suggestions while typing: the supported cities in demo mode, Google city autocomplete when live."""
+    q = " ".join(query.split())[:80]
+    if not get_settings().google_enabled:
+        return {"suggestions": demo.suggest(q)[:limit], "mode": "demo"}
+    if len(q) < 2:
+        return {"suggestions": [], "mode": "live"}
+
+    async def fn() -> dict:
+        return {"suggestions": await google.autocomplete_cities(q, limit), "mode": "live"}
+
+    return await run_tool("suggest_destinations", {"q": q.lower(), "n": limit}, TTL_SUGGEST, fn)
 
 
 async def search_places(

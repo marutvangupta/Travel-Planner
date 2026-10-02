@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Building2, Castle, Check, Landmark, Minus, Moon, Mountain, Palette, Plus, ShoppingBag, Sparkles, Trees, Utensils, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { DestinationField } from "../components/trip/DestinationField";
 import { Button, Chip, CountUp, Field, Segmented, Toggle, inputCls } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { ApiError, api, streamTrip } from "../lib/api";
@@ -93,7 +94,6 @@ export default function NewTripPage() {
     e.preventDefault();
     submit();
   };
-  const suggestions = meta?.destinations ?? ["Jaipur, India", "Goa, India", "Tokyo, Japan", "Paris, France"];
 
   if (phase === "run") return <RunScreen form={form} onBack={() => setPhase("form")} onDone={(id) => nav(`/trips/${id}`, { replace: true })} />;
 
@@ -130,15 +130,8 @@ export default function NewTripPage() {
 
                 {step === 0 && (
                   <div className="flex max-w-xl flex-col gap-7">
-                    <Field label="Destination" htmlFor="dest" hint={meta?.destinations ? "Demo mode covers these four cities. Add a Google Maps key for anywhere else." : undefined}>
-                      <input id="dest" className={`${inputCls} !h-12 !text-[17px]`} value={form.destination} onChange={(e) => set("destination", e.target.value)} placeholder="City, country" autoFocus autoComplete="off" />
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {suggestions.map((s) => (
-                          <Chip key={s} active={form.destination === s} onClick={() => set("destination", s)}>
-                            {s}
-                          </Chip>
-                        ))}
-                      </div>
+                    <Field label="Destination" htmlFor="dest" hint={meta?.destinations ? "Demo mode covers Jaipur, Goa, Tokyo and Paris." : "Any city works. Pick a suggestion or type your own."}>
+                      <DestinationField id="dest" value={form.destination} onChange={(v) => set("destination", v)} demoCities={meta?.destinations ?? null} autoFocus />
                     </Field>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="From" htmlFor="start">
