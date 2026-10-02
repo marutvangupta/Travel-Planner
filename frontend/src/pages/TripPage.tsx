@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Ban, Check, ChevronDown, CloudRain, Eye, Info, ListOrdered, Map as MapIcon, MessageSquare, RotateCw, X } from "lucide-react";
+import { ArrowLeft, Ban, Check, ChevronDown, CloudRain, Eye, Info, ListOrdered, Map as MapIcon, Maximize2, MessageSquare, RotateCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChartMap } from "../components/trip/ChartMap";
+import { MapExpanded } from "../components/trip/MapExpanded";
 import { DayTabs } from "../components/trip/DayTabs";
 import { ChatPanel, Delta, HistoryPanel, WhatIfPanel } from "../components/trip/Panels";
 import { BudgetMeter } from "../components/trip/parts";
@@ -29,6 +30,8 @@ export default function TripPage() {
   const [error, setError] = useState<string | null>(null);
   const [dayIndex, setDayIndex] = useState(0);
   const [mapAll, setMapAll] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const closeMap = useCallback(() => setMapOpen(false), []);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey>("chat");
   const [mobileView, setMobileView] = useState<MobileView>("plan");
@@ -371,7 +374,14 @@ export default function TripPage() {
           <aside aria-label="Map and assistant" className={`flex flex-col gap-4 lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-6rem)] lg:min-h-[600px] ${mobileView === "plan" ? "max-lg:hidden" : ""}`}>
             <div className={`card shrink-0 overflow-hidden ${mobileView === "map" ? "" : "max-lg:hidden"}`}>
               <div className="h-[calc(100dvh-15.85rem-env(safe-area-inset-bottom))] min-h-[260px] lg:h-[248px] lg:min-h-0 xl:h-[272px]">
-                <ChartMap days={shown.days} active={mapAll ? "all" : day} base={shown.base} hoverId={hoverId} onHover={setHoverId} highlight={highlight} />
+                <ChartMap days={shown.days} active={mapAll ? "all" : day} base={shown.base} hoverId={hoverId} onHover={setHoverId}
+                  highlight={highlight}
+                  chrome={
+                    <button type="button" onClick={() => setMapOpen(true)} aria-label="Expand map" className="grid h-8 w-8 place-items-center rounded-full border border-line bg-raised/85 text-ink shadow-[var(--shadow-sm)] backdrop-blur transition-colors hover:bg-raised">
+                      <Maximize2 size={14} />
+                    </button>
+                  }
+                />
               </div>
               <div className="flex items-center gap-3 border-t border-line px-3 py-2 text-[12px] text-muted">
                 <span className="flex shrink-0 items-center gap-1.5">
@@ -441,6 +451,21 @@ export default function TripPage() {
               </div>
             </div>
           </aside>
+          <MapExpanded
+            open={mapOpen}
+            onClose={closeMap}
+            itinerary={shown}
+            day={day}
+            all={mapAll}
+            onDay={(i) => {
+              setMapAll(false);
+              setDayIndex(i);
+            }}
+            onAll={() => setMapAll(true)}
+            hoverId={hoverId}
+            onHover={setHoverId}
+            highlight={highlight}
+          />
         </div>
       </div>
 

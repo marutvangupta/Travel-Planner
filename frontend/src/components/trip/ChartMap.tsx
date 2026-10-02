@@ -1,6 +1,6 @@
 import { animate, AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { MapPin } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { hhmm } from "../../lib/format";
 import { ease } from "../../lib/motion";
 import type { Day, Item } from "../../lib/types";
@@ -105,6 +105,9 @@ export function ChartMap({
   hoverId,
   onHover,
   highlight,
+  selectedId,
+  onSelect,
+  chrome,
   className = "",
 }: {
   days: Day[];
@@ -113,6 +116,10 @@ export function ChartMap({
   hoverId: string | null;
   onHover: (id: string | null) => void;
   highlight?: Set<string>;
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
+  /** extra overlay controls (e.g. the expand button), rendered top-right */
+  chrome?: ReactNode;
   className?: string;
 }) {
   const reduce = useReducedMotion();
@@ -295,7 +302,8 @@ export function ChartMap({
                   pos={at(it)}
                   bounds={[W, H]}
                   color={active === "all" ? DAY_COLORS[d.index % DAY_COLORS.length] : "var(--sea)"}
-                  hover={hoverId === it.id}
+                  hover={hoverId === it.id || selectedId === it.id}
+                  onSelect={onSelect}
                   flagged={!!highlight?.has(it.id)}
                   delay={reduce ? 0 : 0.2 + i * 0.06}
                   onHover={onHover}
@@ -326,6 +334,7 @@ export function ChartMap({
           {visible.length} {visible.length === 1 ? "stop" : "stops"}
         </span>
       </div>
+      {chrome && <div className="absolute right-3 top-3 flex gap-1.5">{chrome}</div>}
       {visible.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="flex items-center gap-2.5 rounded-xl border border-line bg-raised/85 px-3.5 py-2.5 shadow-[var(--shadow-pop)] backdrop-blur">
@@ -343,7 +352,7 @@ export function ChartMap({
   );
 }
 
-function Marker({ it, n, pos, bounds, color, hover, flagged, delay, onHover }: { it: Item; n: number; pos: P; bounds: [number, number]; color: string; hover: boolean; flagged: boolean; delay: number; onHover: (id: string | null) => void }) {
+function Marker({ it, n, pos, bounds, color, hover, flagged, delay, onHover, onSelect }: { onSelect?: (id: string) => void; it: Item; n: number; pos: P; bounds: [number, number]; color: string; hover: boolean; flagged: boolean; delay: number; onHover: (id: string | null) => void }) {
   const r = 12;
   // keep the name label inside the frame: flip below near the top edge, shift sideways near the sides
   const labelW = Math.min(Math.min(it.name.length, 30) * 6.4 + 60, 256);
@@ -357,6 +366,7 @@ function Marker({ it, n, pos, bounds, color, hover, flagged, delay, onHover }: {
       style={{ x: pos[0], y: pos[1], cursor: "pointer" }}
       onMouseEnter={() => onHover(it.id)}
       onMouseLeave={() => onHover(null)}
+      onClick={() => onSelect?.(it.id)}
     >
       {flagged && <circle r={r + 6} fill="none" stroke="var(--signal)" strokeWidth={2} className="ping" style={{ transformOrigin: "0 0" }} />}
       <circle r={r + 7} fill={color} opacity={hover ? 0.2 : 0.1} />
