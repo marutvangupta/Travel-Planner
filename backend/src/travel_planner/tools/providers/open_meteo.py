@@ -1,4 +1,4 @@
-"""Open-Meteo daily forecast (free, no key). Covers ~16 days ahead; beyond that callers fall back."""
+"""Open-Meteo daily forecast and place search (free, no key). The forecast covers ~16 days ahead; beyond that callers fall back."""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ from ...schemas import DayWeather, Source
 from ..common import http_json, now_iso
 
 URL = "https://api.open-meteo.com/v1/forecast"
+GEOCODING = "https://geocoding-api.open-meteo.com/v1/search"
+# GeoNames feature codes worth offering as a destination: towns and cities, regions, countries, islands
+PLACE_CODES = ("PPL", "ADM", "PCL", "ISL", "RGN")
 
 CODES = {
     0: "clear", 1: "clear", 2: "cloudy", 3: "cloudy", 45: "cloudy", 48: "cloudy",
@@ -42,4 +45,24 @@ async def forecast(lat: float, lng: float, start: date, end: date) -> list[DayWe
             source=Source(id=f"meteo:{round(lat,2)},{round(lng,2)}:{day}", provider="open-meteo",
                           title="Open-Meteo forecast", url="https://open-meteo.com/", retrieved_at=now_iso()),
         ))
+    return out
+
+
+async def search_cities(query: str, limit: int) -> list[dict]:
+    """City suggestions from Open-Meteo's GeoNames search, used when Google autocomplete is unavailable."""
+    data = await http_json("GET", GEOCODING, params={"name": query, "count": min(limit * 2, 20), "language": "en", "format": "json"})
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in data.get("results") or []:
+        name = r.get("name") or ""
+        if not name or not str(r.get("feature_code", "")).startswith(PLACE_CODES):
+            continue
+        detail = ", ".join(x for x in (r.get("admin1"), r.get("country")) if x and x != name)
+        label = f"{name}, {detail}" if detail else name
+        if label in seen:
+            continue
+        seen.add(label)
+        out.append({"label": label, "name": name, "detail": detail})
+        if len(out) >= limit:
+            break
     return out

@@ -1,17 +1,35 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, Eye, History, MessageSquare, Send, Sparkles, X, Zap } from "lucide-react";
+import { AlarmClock, ArrowRight, ArrowUp, Check, CloudRain, Eye, MoonStar, Snail, TrendingDown, TrendingUp, X, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import { inr } from "../../lib/format";
-import { rise, spring, stagger } from "../../lib/motion";
+import { ease, spring } from "../../lib/motion";
 import type { ChatMessage, ChatReply, Diff, Itinerary, Proposal, VersionRow } from "../../lib/types";
 import { Button, CountUp, inputCls } from "../ui";
 import { Citations, KindBadge } from "./parts";
 
 /* ------------------------------------------------------------------------------------- proposal card */
 
+export function Delta({ diff }: { diff: Diff }) {
+  const d = diff.cost_delta;
+  return (
+    <span className="mono flex shrink-0 items-center gap-2 text-[12px]">
+      <span className={d < 0 ? "text-good" : d > 0 ? "text-bad" : "text-muted"}>
+        {d > 0 ? "+" : d < 0 ? "−" : "±"}
+        {inr(Math.abs(d))}
+      </span>
+      <span className="text-faint" aria-hidden>
+        ·
+      </span>
+      <span className="text-muted" title="Share of the other stops left exactly as they were">
+        {Math.round(diff.stability * 100)}% kept
+      </span>
+    </span>
+  );
+}
+
 export function ProposalCard({
-  diff, reason, affected, notes, onPreview, onAccept, onReject, previewing, busy, applyLabel = "Accept change",
+  diff, reason, affected, notes, onPreview, onAccept, onReject, previewing, busy, applyLabel = "Apply change",
 }: {
   diff: Diff;
   reason?: string;
@@ -25,54 +43,60 @@ export function ProposalCard({
   applyLabel?: string;
 }) {
   return (
-    <motion.div layout initial={{ opacity: 0, y: 12, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={spring} className="overflow-hidden rounded-2xl border border-signal/40 bg-surface shadow-[var(--shadow)]">
-      <div className="flex items-start justify-between gap-3 border-b border-line bg-signal-soft px-4 py-3">
-        <div className="min-w-0">
-          <p className="label !text-signal">Proposed change</p>
-          <p className="mt-1 text-sm font-medium leading-snug">{reason ?? diff.summary}</p>
+    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="card relative overflow-hidden">
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-signal" />
+      <div className="flex flex-col gap-3 py-3.5 pl-4 pr-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="label !text-signal">Proposed change</p>
+            <p className="mt-1 text-[14px] font-semibold leading-snug">{reason ?? diff.summary}</p>
+          </div>
+          <Delta diff={diff} />
         </div>
-        <div className="mono shrink-0 text-right text-xs">
-          <p className={diff.cost_delta <= 0 ? "text-good" : "text-bad"}>{diff.cost_delta > 0 ? "+" : diff.cost_delta < 0 ? "−" : "±"}{inr(Math.abs(diff.cost_delta))}</p>
-          <p className="text-muted">{Math.round(diff.stability * 100)}% kept</p>
-        </div>
-      </div>
-      <div className="flex flex-col gap-2 px-4 py-3">
         {affected && affected.length > 0 && (
           <p className="text-[13px] text-muted">
-            Affected: <span className="text-ink">{affected.map((a) => a.name).join(", ")}</span>
+            Affects <span className="text-ink">{affected.map((a) => a.name).join(", ")}</span>
           </p>
         )}
-        <ul className="flex flex-col gap-1.5">
-          {diff.changes.slice(0, 6).map((c) => (
-            <li key={c.kind + c.place_id} className="flex items-center gap-2 text-[13px]">
-              <KindBadge kind={c.kind} />
-              <span className="min-w-0 flex-1 truncate">{c.name}</span>
-              <span className="mono shrink-0 text-xs text-faint">{c.detail}</span>
-            </li>
-          ))}
-          {diff.changes.length > 6 && <li className="text-xs text-faint">and {diff.changes.length - 6} more</li>}
-        </ul>
-        {notes && notes.length > 0 && <p className="text-xs text-muted">{notes.join(" ")}</p>}
+        {diff.changes.length > 0 && (
+          <ul className="flex flex-col gap-1.5 border-t border-line pt-3">
+            {diff.changes.slice(0, 6).map((c) => (
+              <li key={c.kind + c.place_id} className="flex items-center gap-2 text-[13px]">
+                <KindBadge kind={c.kind} />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <span className="mono shrink-0 text-[12px] text-muted">{c.detail}</span>
+              </li>
+            ))}
+            {diff.changes.length > 6 && <li className="text-[12px] text-muted">and {diff.changes.length - 6} more</li>}
+          </ul>
+        )}
+        {notes && notes.length > 0 && (
+          <ul className="flex flex-col gap-1 text-[13px] leading-snug text-muted">
+            {notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        )}
+        {(onAccept || onPreview || onReject) && (
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+            {onAccept && (
+              <Button size="sm" onClick={onAccept} loading={busy} icon={<Check size={14} />}>
+                {applyLabel}
+              </Button>
+            )}
+            {onPreview && (
+              <Button size="sm" variant={previewing ? "soft" : "ghost"} onClick={onPreview} icon={<Eye size={14} />} aria-pressed={previewing}>
+                {previewing ? "Previewing" : "Preview"}
+              </Button>
+            )}
+            {onReject && (
+              <Button size="sm" variant="quiet" onClick={onReject} className="ml-auto" icon={<X size={14} />}>
+                Dismiss
+              </Button>
+            )}
+          </div>
+        )}
       </div>
-      {(onAccept || onPreview || onReject) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
-          {onAccept && (
-            <Button size="sm" onClick={onAccept} loading={busy} icon={<Check size={14} />}>
-              {applyLabel}
-            </Button>
-          )}
-          {onPreview && (
-            <Button size="sm" variant={previewing ? "soft" : "ghost"} onClick={onPreview} icon={<Eye size={14} />}>
-              {previewing ? "Previewing" : "Preview"}
-            </Button>
-          )}
-          {onReject && (
-            <Button size="sm" variant="ghost" onClick={onReject} className="ml-auto" icon={<X size={14} />}>
-              Dismiss
-            </Button>
-          )}
-        </div>
-      )}
     </motion.div>
   );
 }
@@ -85,22 +109,27 @@ interface Bubble {
   text: string;
   proposal?: Proposal | null;
   citations?: string[];
+  error?: boolean;
 }
 
 const THINKING = ["Reading your itinerary", "Checking opening hours", "Finding what is affected", "Re-planning only what changed", "Verifying the result"];
 
 export function ChatPanel({
-  tripId, messages, itinerary, previewId, onPreview, onAccept, onReject, onAfterSend, busyId,
+  tripId, messages, itinerary, previewId, onPreview, onAccept, onReject, onAfterSend, busyId, draft, onDraftUsed,
 }: {
   tripId: string;
   messages: ChatMessage[];
   itinerary: Itinerary;
   previewId: string | null;
-  onPreview: (p: Proposal) => void;
+  onPreview: (p: Proposal, reveal?: boolean) => void;
   onAccept: (p: Proposal) => void;
   onReject: (versionId: string) => void;
   onAfterSend: () => void;
   busyId: string | null;
+  /** Text to place in the composer (for example from "Ask for ideas"); `n` changes on every request. */
+  draft?: { text: string; n: number } | null;
+  /** Called once the draft is in the composer, so remounting the panel does not apply it again. */
+  onDraftUsed?: () => void;
 }) {
   const initial = useMemo<Bubble[]>(() => messages.map((m) => ({ key: m.id, role: m.role, text: m.content, citations: m.payload?.citations })), [messages]);
   const [local, setLocal] = useState<Bubble[]>([]);
@@ -109,7 +138,15 @@ export function ChatPanel({
   const [step, setStep] = useState(0);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!draft) return;
+    setInput(draft.text);
+    onDraftUsed?.();
+    requestAnimationFrame(() => inputRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft]);
   useEffect(() => {
     if (!busy) return;
     const t = window.setInterval(() => setStep((s) => (s + 1) % THINKING.length), 900);
@@ -121,11 +158,13 @@ export function ChatPanel({
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [local.length, busy, initial.length]);
 
-  const outdoor = itinerary.days.flatMap((d) => d.items).find((i) => !i.indoor);
+  const items = itinerary.days.flatMap((d) => d.items);
+  const outdoor = items.find((i) => !i.indoor);
+  const busiest = [...itinerary.days].sort((a, b) => b.items.length - a.items.length)[0];
   const suggestions = [
     outdoor ? `Swap ${outdoor.name} for something indoors` : "Add more food experiences",
     "Make it more relaxed",
-    "Is day 1 too packed?",
+    `Is day ${(busiest?.index ?? 0) + 1} too packed?`,
     "How much will this cost?",
   ];
 
@@ -139,12 +178,13 @@ export function ChatPanel({
     try {
       const r = await api<ChatReply>(`/trips/${tripId}/chat`, { method: "POST", json: { message: msg } });
       setLocal((l) => [...l, { key: `a${Date.now()}`, role: "assistant", text: r.reply, proposal: r.proposal, citations: r.citations }]);
-      if (r.proposal?.version_id) onPreview(r.proposal);
+      if (r.proposal?.version_id) onPreview(r.proposal, false);
     } catch (e) {
-      setLocal((l) => [...l, { key: `e${Date.now()}`, role: "assistant", text: e instanceof Error ? e.message : "Something went wrong." }]);
+      setLocal((l) => [...l, { key: `e${Date.now()}`, role: "assistant", text: e instanceof Error ? e.message : "Something went wrong. Try again.", error: true }]);
     } finally {
       setBusy(false);
       onAfterSend();
+      inputRef.current?.focus();
     }
   };
   const onSubmit = (e: FormEvent) => {
@@ -155,54 +195,71 @@ export function ChatPanel({
   const all = [...initial.filter((b) => !local.some((l) => l.text === b.text && l.role === b.role)), ...local];
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {all.length === 0 && (
-          <div className="mb-4 rounded-2xl border border-dashed border-line p-4">
-            <p className="display-wide mb-1 text-lg">Change anything in plain words</p>
-            <p className="text-sm text-muted">Swap a stop, cut the budget, slow the pace, or tell me it is going to rain. I will show the change before it applies.</p>
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4" aria-live="polite" aria-busy={busy}>
+        {all.length === 0 && !busy ? (
+          <div className="flex h-full flex-col justify-end gap-4">
+            <div>
+              <p className="text-[15px] font-semibold">Change anything in plain words</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-muted">Swap a stop, trim the budget, slow the pace or ask a question. Changes are shown as a preview before anything is applied.</p>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {suggestions.map((s) => (
+                <li key={s}>
+                  <button type="button" onClick={() => send(s)} className="group flex w-full items-center justify-between gap-3 rounded-[var(--radius-ctl)] border border-line bg-surface px-3 py-2.5 text-left text-[13px] font-medium transition-colors hover:border-sea/60 hover:text-sea">
+                    <span className="min-w-0 truncate">{s}</span>
+                    <ArrowRight size={14} className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5 group-hover:text-sea" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        )}
-        <motion.ul variants={stagger(0.04)} initial="hidden" animate="show" className="m-0 flex flex-col gap-3 p-0">
-          {all.map((b) => (
-            <motion.li key={b.key} layout variants={rise} className={`flex list-none flex-col gap-2 ${b.role === "user" ? "items-end" : "items-start"}`}>
-              <div className={`max-w-[92%] whitespace-pre-line rounded-2xl px-3.5 py-2.5 text-[14px] leading-snug ${b.role === "user" ? "rounded-br-md bg-sea text-sea-ink" : "rounded-bl-md border border-line bg-surface"}`}>
-                {b.text}
-                {b.citations && b.citations.length > 0 && (
-                  <div className="mt-2">
-                    <Citations ids={b.citations} sources={itinerary.sources} />
+        ) : (
+          <ul className="m-0 flex flex-col gap-3 p-0">
+            {all.map((b) => (
+              <motion.li key={b.key} layout="position" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, ease }} className={`flex list-none flex-col gap-2 ${b.role === "user" ? "items-end" : "items-start"}`}>
+                <div
+                  className={`max-w-[88%] whitespace-pre-line rounded-[14px] px-3.5 py-2.5 text-[14px] leading-snug ${
+                    b.role === "user" ? "rounded-br-[5px] bg-sea text-sea-ink" : b.error ? "rounded-bl-[5px] bg-signal-soft text-signal" : "rounded-bl-[5px] bg-surface-2"
+                  }`}
+                >
+                  {b.text}
+                  {b.citations && b.citations.length > 0 && (
+                    <div className="-ml-1.5 mt-1.5">
+                      <Citations ids={b.citations} sources={itinerary.sources} />
+                    </div>
+                  )}
+                </div>
+                {b.proposal && b.proposal.version_id && b.proposal.diff.changes.length > 0 && !dismissed.has(b.proposal.version_id) && (
+                  <div className="w-full">
+                    <ProposalCard
+                      diff={b.proposal.diff}
+                      affected={b.proposal.affected}
+                      notes={b.proposal.notes}
+                      previewing={previewId === b.proposal.version_id}
+                      busy={busyId === b.proposal.version_id}
+                      onPreview={() => onPreview(b.proposal!, true)}
+                      onAccept={() => onAccept(b.proposal!)}
+                      onReject={() => {
+                        onReject(b.proposal!.version_id!);
+                        setDismissed((s) => new Set(s).add(b.proposal!.version_id!));
+                      }}
+                    />
                   </div>
                 )}
-              </div>
-              {b.proposal && b.proposal.version_id && !dismissed.has(b.proposal.version_id) && (
-                <div className="w-full">
-                  <ProposalCard
-                    diff={b.proposal.diff}
-                    affected={b.proposal.affected}
-                    notes={b.proposal.notes}
-                    previewing={previewId === b.proposal.version_id}
-                    busy={busyId === b.proposal.version_id}
-                    onPreview={() => onPreview(b.proposal!)}
-                    onAccept={() => onAccept(b.proposal!)}
-                    onReject={() => {
-                      onReject(b.proposal!.version_id!);
-                      setDismissed((s) => new Set(s).add(b.proposal!.version_id!));
-                    }}
-                  />
-                </div>
-              )}
-            </motion.li>
-          ))}
-        </motion.ul>
+              </motion.li>
+            ))}
+          </ul>
+        )}
         <AnimatePresence>
           {busy && (
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-3 flex items-center gap-2.5 text-sm text-muted">
+            <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-3 flex items-center gap-2.5 text-[13px] text-muted">
               <span className="flex gap-1" aria-hidden>
                 {[0, 1, 2].map((i) => (
-                  <motion.i key={i} className="block h-1.5 w-1.5 rounded-full bg-sea" animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }} transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }} />
+                  <motion.i key={i} className="block h-1.5 w-1.5 rounded-full bg-sea" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }} />
                 ))}
               </span>
               <AnimatePresence mode="wait">
-                <motion.span key={step} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>
+                <motion.span key={step} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                   {THINKING[step]}
                 </motion.span>
               </AnimatePresence>
@@ -211,18 +268,25 @@ export function ChatPanel({
         </AnimatePresence>
       </div>
       <div className="border-t border-line p-3">
-        <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1">
-          {suggestions.map((s) => (
-            <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:border-sea hover:text-sea disabled:opacity-50">
-              {s}
-            </button>
-          ))}
-        </div>
-        <form onSubmit={onSubmit} className="flex gap-2">
-          <input aria-label="Message" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Swap the fort for something indoors…" className={inputCls} maxLength={600} />
-          <Button type="submit" disabled={!input.trim()} loading={busy} aria-label="Send" className="!px-3.5">
-            <Send size={16} />
-          </Button>
+        {all.length > 0 && (
+          <div className="no-scrollbar fade-x mb-2.5 flex gap-1.5 overflow-x-auto pr-6">
+            {suggestions.map((s) => (
+              <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="h-7 shrink-0 rounded-full border border-line px-2.5 text-[12px] font-medium text-muted transition-colors hover:border-sea/60 hover:text-sea disabled:opacity-50">
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        <form onSubmit={onSubmit} className="relative">
+          <input ref={inputRef} aria-label="Ask for a change or a question" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Swap the fort for something indoors…" className={`${inputCls} pr-12`} maxLength={600} />
+          <button
+            type="submit"
+            disabled={!input.trim() || busy}
+            aria-label="Send"
+            className="absolute right-1.5 top-1.5 grid h-8 w-8 place-items-center rounded-[7px] bg-sea text-sea-ink transition-opacity disabled:opacity-30"
+          >
+            <ArrowUp size={16} />
+          </button>
         </form>
       </div>
     </div>
@@ -231,24 +295,24 @@ export function ChatPanel({
 
 /* ------------------------------------------------------------------------------------- what if */
 
-const PRESETS = [
-  { label: "Cut ₹10,000", text: "What if I reduce my budget by ₹10,000?" },
-  { label: "Cut ₹25,000", text: "What if I reduce my budget by ₹25,000?" },
-  { label: "Add ₹20,000", text: "What if I increase my budget by ₹20,000?" },
-  { label: "Slow the pace", text: "What if I take it slower?" },
-  { label: "Rain on day 2", text: "What if it rains on day 2?" },
-  { label: "Start later", text: "What if I start later each day?" },
-  { label: "Skip nightlife", text: "What if I skip nightlife?" },
+const PRESETS: { label: string; text: string; icon: LucideIcon }[] = [
+  { label: "Cut ₹10,000", text: "What if I reduce my budget by ₹10,000?", icon: TrendingDown },
+  { label: "Cut ₹25,000", text: "What if I reduce my budget by ₹25,000?", icon: TrendingDown },
+  { label: "Add ₹20,000", text: "What if I increase my budget by ₹20,000?", icon: TrendingUp },
+  { label: "Slow the pace", text: "What if I take it slower?", icon: Snail },
+  { label: "Rain on day 2", text: "What if it rains on day 2?", icon: CloudRain },
+  { label: "Start later", text: "What if I start later each day?", icon: AlarmClock },
+  { label: "Skip nightlife", text: "What if I skip nightlife?", icon: MoonStar },
 ];
 
 function Ring({ value }: { value: number }) {
-  const r = 26;
+  const r = 22;
   const c = 2 * Math.PI * r;
   return (
-    <svg width="68" height="68" viewBox="0 0 68 68" role="img" aria-label={`${Math.round(value * 100)}% of other stops unchanged`}>
-      <circle cx="34" cy="34" r={r} fill="none" stroke="var(--line)" strokeWidth="5" />
-      <motion.circle cx="34" cy="34" r={r} fill="none" stroke="var(--sea)" strokeWidth="5" strokeLinecap="round" strokeDasharray={c} initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c * (1 - value) }} transition={{ duration: 1.1, ease: [0.22, 1, 0.36, 1] }} transform="rotate(-90 34 34)" />
-      <text x="34" y="38" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="14" fontWeight="600" fill="var(--ink)">
+    <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label={`${Math.round(value * 100)}% of other stops unchanged`} className="shrink-0">
+      <circle cx="28" cy="28" r={r} fill="none" stroke="var(--line)" strokeWidth="4" />
+      <motion.circle cx="28" cy="28" r={r} fill="none" stroke="var(--sea)" strokeWidth="4" strokeLinecap="round" strokeDasharray={c} initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c * (1 - value) }} transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }} transform="rotate(-90 28 28)" />
+      <text x="28" y="32" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fontWeight="600" fill="var(--ink)">
         {Math.round(value * 100)}%
       </text>
     </svg>
@@ -258,21 +322,22 @@ function Ring({ value }: { value: number }) {
 function CostBars({ diff, budget }: { diff: Diff; budget: number }) {
   const max = Math.max(diff.cost_before, diff.cost_after, budget) || 1;
   const rows = [
-    { label: "Now", value: diff.cost_before, color: "var(--faint)" },
+    { label: "Now", value: diff.cost_before, color: "var(--line-strong)" },
     { label: "If applied", value: diff.cost_after, color: diff.cost_after <= diff.cost_before ? "var(--sea)" : "var(--signal)" },
   ];
   return (
     <div className="flex flex-col gap-2.5">
       {rows.map((r, i) => (
         <div key={r.label}>
-          <div className="mb-1 flex justify-between text-xs">
+          <div className="mb-1 flex justify-between text-[12px]">
             <span className="text-muted">{r.label}</span>
             <span className="mono font-medium">
               <CountUp value={r.value} format={inr} />
             </span>
           </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-surface-2">
-            <motion.div className="h-full rounded-full" style={{ background: r.color }} initial={{ width: 0 }} animate={{ width: `${(r.value / max) * 100}%` }} transition={{ duration: 0.9, delay: 0.1 + i * 0.12, ease: [0.22, 1, 0.36, 1] }} />
+          <div className="relative h-1.5 overflow-hidden rounded-full bg-surface-2">
+            <motion.div className="h-full rounded-full" style={{ background: r.color }} initial={{ width: 0 }} animate={{ width: `${(r.value / max) * 100}%` }} transition={{ duration: 0.8, delay: 0.1 + i * 0.1, ease: [0.22, 1, 0.36, 1] }} />
+            <span className="absolute inset-y-0 w-px bg-ink/40" style={{ left: `${(budget / max) * 100}%` }} title="Budget" />
           </div>
         </div>
       ))}
@@ -281,7 +346,9 @@ function CostBars({ diff, budget }: { diff: Diff; budget: number }) {
 }
 
 function Coverage({ diff }: { diff: Diff }) {
-  const keys = Array.from(new Set([...Object.keys(diff.interests_before), ...Object.keys(diff.interests_after)])).sort((a, b) => (diff.interests_after[b] ?? 0) - (diff.interests_after[a] ?? 0)).slice(0, 5);
+  const keys = Array.from(new Set([...Object.keys(diff.interests_before), ...Object.keys(diff.interests_after)]))
+    .sort((a, b) => (diff.interests_after[b] ?? 0) - (diff.interests_after[a] ?? 0))
+    .slice(0, 5);
   const max = Math.max(1, ...keys.map((k) => Math.max(diff.interests_before[k] ?? 0, diff.interests_after[k] ?? 0)));
   return (
     <div className="flex flex-col gap-1.5">
@@ -289,11 +356,11 @@ function Coverage({ diff }: { diff: Diff }) {
         const b = diff.interests_before[k] ?? 0;
         const a = diff.interests_after[k] ?? 0;
         return (
-          <div key={k} className="grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-2 text-xs">
+          <div key={k} className="grid grid-cols-[5.5rem_1fr_2rem] items-center gap-2 text-[12px]">
             <span className="truncate capitalize text-muted">{k}</span>
-            <div className="relative h-2 rounded-full bg-surface-2">
-              <motion.span className="absolute inset-y-0 left-0 rounded-full bg-line" initial={{ width: 0 }} animate={{ width: `${(b / max) * 100}%` }} transition={{ duration: 0.7, delay: i * 0.05 }} />
-              <motion.span className="absolute inset-y-0 left-0 rounded-full bg-sea/80" style={{ height: "55%", top: "22%" }} initial={{ width: 0 }} animate={{ width: `${(a / max) * 100}%` }} transition={{ duration: 0.8, delay: 0.1 + i * 0.05 }} />
+            <div className="relative h-1.5 rounded-full bg-surface-2">
+              <motion.span className="absolute inset-y-0 left-0 rounded-full bg-line-strong" initial={{ width: 0 }} animate={{ width: `${(b / max) * 100}%` }} transition={{ duration: 0.6, delay: i * 0.04 }} />
+              <motion.span className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-sea" initial={{ width: 0 }} animate={{ width: `${(a / max) * 100}%` }} transition={{ duration: 0.7, delay: 0.1 + i * 0.04 }} />
             </div>
             <span className={`mono text-right ${a > b ? "text-good" : a < b ? "text-signal" : "text-faint"}`}>
               {a - b > 0 ? "+" : ""}
@@ -319,7 +386,7 @@ export function WhatIfPanel({
   tripId: string;
   budget: number;
   previewId: string | null;
-  onPreview: (p: Proposal) => void;
+  onPreview: (p: Proposal, reveal?: boolean) => void;
   onAccept: (p: Proposal) => void;
   busyId: string | null;
   onAfterRun: () => void;
@@ -355,38 +422,57 @@ export function WhatIfPanel({
 
   return (
     <div ref={scrollRef} className="relative flex h-full min-h-0 flex-col overflow-y-auto">
-      <div className="px-4 pb-3 pt-4">
-        <p className="display-wide mb-0.5 text-lg">What if…</p>
-        <p className="mb-3 text-[13px] text-muted">Test a change. Nothing is saved until you apply it.</p>
-        <div className="flex flex-wrap gap-1.5">
-          {PRESETS.map((p) => (
-            <motion.button key={p.label} type="button" whileTap={{ scale: 0.94 }} disabled={!!busy} onClick={() => run(p.text)} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-60 ${busy === p.text ? "border-sea bg-sea-soft text-sea" : "border-line bg-surface text-muted hover:border-sea hover:text-sea"}`}>
-              <Zap size={12} /> {p.label}
-            </motion.button>
-          ))}
+      <div className="px-4 pb-4 pt-4">
+        <p className="text-[15px] font-semibold">Try a scenario</p>
+        <p className="mb-3 mt-0.5 text-[13px] text-muted">See cost, travel time and what stays the same. Nothing is saved until you apply it.</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PRESETS.map(({ label, text: t, icon: Icon }) => {
+            const running = busy === t;
+            return (
+              <motion.button
+                key={label}
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                disabled={!!busy}
+                onClick={() => run(t)}
+                aria-busy={running || undefined}
+                className={`flex h-9 items-center gap-2 rounded-[var(--radius-ctl)] border px-2.5 text-left text-[13px] font-medium transition-colors disabled:cursor-not-allowed ${
+                  running ? "border-sea/60 bg-sea-soft text-sea" : "border-line bg-surface text-ink hover:border-sea/60 hover:text-sea disabled:opacity-50"
+                }`}
+              >
+                <Icon size={14} className={running ? "animate-pulse" : "text-muted"} aria-hidden />
+                <span className="truncate">{label}</span>
+              </motion.button>
+            );
+          })}
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); void run(text); }} className="mt-3 flex gap-2">
-          <input aria-label="Describe a scenario" value={text} onChange={(e) => setText(e.target.value)} placeholder="What if I cut the budget by ₹15,000?" className={inputCls} maxLength={400} />
-          <Button type="submit" variant="soft" disabled={!text.trim()} loading={!!busy && busy === text.trim()} aria-label="Run scenario" className="!px-3.5">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(text);
+          }}
+          className="relative mt-2"
+        >
+          <input aria-label="Describe your own scenario" value={text} onChange={(e) => setText(e.target.value)} placeholder="Or describe one: what if I cut ₹15,000?" className={`${inputCls} pr-12`} maxLength={400} />
+          <button type="submit" disabled={!text.trim() || !!busy} aria-label="Run scenario" className="absolute right-1.5 top-1.5 grid h-8 w-8 place-items-center rounded-[7px] bg-sea-soft text-sea transition-opacity disabled:opacity-30">
             <ArrowRight size={16} />
-          </Button>
+          </button>
         </form>
       </div>
-      <div className="flex flex-1 flex-col gap-4 px-4 pb-6">
+      <div className="flex flex-1 flex-col gap-3 border-t border-line px-4 pb-6 pt-4">
         <AnimatePresence initial={false}>
           {results.map((r, idx) => (
-            <motion.div key={r.key} ref={idx === 0 ? firstResult : undefined} layout initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }} transition={spring} className="card overflow-hidden">
-              <div className="border-b border-line px-4 py-3">
-                <p className="label mb-1">Scenario</p>
-                <p className="text-sm font-medium">{r.text}</p>
+            <motion.div key={r.key} ref={idx === 0 ? firstResult : undefined} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={spring} className="card overflow-hidden">
+              <div className="border-b border-line px-4 py-2.5">
+                <p className="text-[13px] font-semibold">{r.text}</p>
               </div>
               {r.proposal && r.proposal.diff.changes.length > 0 ? (
                 <div className="flex flex-col gap-4 px-4 py-4">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3.5">
                     <Ring value={r.proposal.diff.stability} />
                     <div className="text-[13px] leading-snug text-muted">
                       <p className="mb-0.5 font-medium text-ink">{r.proposal.diff.summary}</p>
-                      <p>
+                      <p className="mono text-[12px]">
                         {r.proposal.diff.items_before} → {r.proposal.diff.items_after} stops · travel {r.proposal.diff.travel_delta >= 0 ? "+" : "−"}
                         {Math.abs(r.proposal.diff.travel_delta)} min
                       </p>
@@ -397,28 +483,25 @@ export function WhatIfPanel({
                     <p className="label mb-2">Interest coverage</p>
                     <Coverage diff={r.proposal.diff} />
                   </div>
-                  {r.proposal.notes.length > 0 && <p className="text-xs text-muted">{r.proposal.notes.join(" ")}</p>}
-                  <div className="flex gap-2">
+                  {r.proposal.notes.length > 0 && <p className="text-[12px] leading-snug text-muted">{r.proposal.notes.join(" ")}</p>}
+                  <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={() => onAccept(r.proposal!)} loading={busyId === r.proposal.version_id} icon={<Check size={14} />}>
                       Apply
                     </Button>
-                    <Button size="sm" variant={previewId === r.proposal.version_id ? "soft" : "ghost"} onClick={() => onPreview(r.proposal!)} icon={<Eye size={14} />}>
-                      {previewId === r.proposal.version_id ? "Previewing" : "Preview on timeline"}
+                    <Button size="sm" variant={previewId === r.proposal.version_id ? "soft" : "ghost"} onClick={() => onPreview(r.proposal!, true)} icon={<Eye size={14} />} aria-pressed={previewId === r.proposal.version_id}>
+                      {previewId === r.proposal.version_id ? "Previewing" : "Preview on plan"}
                     </Button>
                   </div>
                 </div>
               ) : (
-                <p className="px-4 py-4 text-sm text-muted">{r.reply}</p>
+                <p className="px-4 py-3.5 text-[13px] text-muted">{r.reply}</p>
               )}
             </motion.div>
           ))}
         </AnimatePresence>
         {results.length === 0 && (
-          <div className="grid flex-1 place-items-center rounded-2xl border border-dashed border-line p-6 text-center text-sm text-faint">
-            <div>
-              <Sparkles size={18} className="mx-auto mb-2 text-sea" />
-              Pick a scenario above. Results show cost, travel and what stays the same.
-            </div>
+          <div className="grid flex-1 place-items-center px-6 py-8 text-center">
+            <p className="max-w-[30ch] text-[13px] text-muted">Results appear here with cost, travel time, interest coverage and how much of the plan stays put.</p>
           </div>
         )}
       </div>
@@ -430,28 +513,34 @@ export function WhatIfPanel({
 
 const TYPE_LABEL: Record<string, string> = { create: "Created", edit: "Edited", replan: "Re-planned", whatif: "What if" };
 
-export function HistoryPanel({ versions }: { versions: VersionRow[] }) {
+export function HistoryPanel({ versions, loading }: { versions: VersionRow[]; loading?: boolean }) {
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
-      <p className="display-wide mb-1 text-lg">Version history</p>
-      <p className="mb-4 text-sm text-muted">Every accepted change is kept, so nothing is lost.</p>
-      <ol className="relative m-0 flex flex-col gap-4 p-0 pl-5 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-line">
-        {versions.map((v, i) => (
-          <motion.li key={v.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="relative list-none">
-            <span className={`absolute -left-5 top-1.5 h-[11px] w-[11px] rounded-full border-2 ${v.current ? "border-sea bg-sea" : "border-faint bg-bg"}`} />
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="mono text-sm font-semibold">v{v.version_no}</span>
-              <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-muted">{TYPE_LABEL[v.change_type] ?? v.change_type}</span>
-              {v.current && <span className="rounded-md bg-sea-soft px-1.5 py-0.5 text-[11px] font-semibold text-sea">current</span>}
-              {v.status === "proposed" && <span className="rounded-md bg-signal-soft px-1.5 py-0.5 text-[11px] font-semibold text-signal">pending</span>}
-            </div>
-            <p className="mt-1 text-[13px] leading-snug">{v.reason}</p>
-            {v.diff && <p className="mono mt-0.5 text-xs text-faint">{v.diff.summary}</p>}
-          </motion.li>
-        ))}
-      </ol>
+      <p className="text-[15px] font-semibold">Version history</p>
+      <p className="mb-5 mt-0.5 text-[13px] text-muted">Every applied change is kept, so nothing is lost.</p>
+      {loading && versions.length === 0 ? (
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="skeleton h-12" />
+          ))}
+        </div>
+      ) : (
+        <ol className="relative m-0 flex flex-col gap-5 p-0 pl-6 before:absolute before:bottom-2 before:left-[5px] before:top-2 before:w-px before:bg-line-strong">
+          {versions.map((v, i) => (
+            <motion.li key={v.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04, duration: 0.3, ease }} className="relative list-none">
+              <span className={`absolute -left-6 top-[5px] h-[11px] w-[11px] rounded-full border-2 ${v.current ? "border-sea bg-sea" : v.status === "proposed" ? "border-signal bg-surface" : "border-line-strong bg-surface"}`} />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mono text-[13px] font-semibold">v{v.version_no}</span>
+                <span className="text-[13px] text-muted">{TYPE_LABEL[v.change_type] ?? v.change_type}</span>
+                {v.current && <span className="rounded bg-sea-soft px-1.5 py-px text-[11px] font-semibold text-sea">Current</span>}
+                {v.status === "proposed" && <span className="rounded bg-signal-soft px-1.5 py-px text-[11px] font-semibold text-signal">Waiting for review</span>}
+              </div>
+              <p className="mt-1 text-[14px] leading-snug">{v.reason}</p>
+              {v.diff && <p className="mono mt-0.5 text-[12px] text-muted">{v.diff.summary}</p>}
+            </motion.li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
-
-export const PanelIcons = { chat: MessageSquare, whatif: Zap, history: History };

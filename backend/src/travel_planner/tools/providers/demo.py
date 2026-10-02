@@ -23,6 +23,17 @@ def supported_destinations() -> list[str]:
     return [m["name"] for m in DESTINATIONS.values()]
 
 
+def suggest(query: str) -> list[dict]:
+    """Supported demo cities whose name or alias matches the typed text (all of them for an empty query)."""
+    q = query.strip().lower()
+    out = []
+    for m in DESTINATIONS.values():
+        if not q or q in m["name"].lower() or any(q in a for a in m["aliases"]):
+            out.append({"label": m["name"], "name": m["name"].split(",")[0], "detail": m["country"]})
+    # a city whose name starts with the text comes first ("pa" is Paris before "Tokyo, Japan")
+    return sorted(out, key=lambda s: not s["name"].lower().startswith(q))
+
+
 def geocode(destination: str) -> Geo:
     key = resolve_key(destination)
     if not key:

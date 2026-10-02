@@ -6,10 +6,13 @@ const KEY = "wp-theme";
 function read(): ThemeChoice {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "light" || v === "dark" ? v : "system";
+    if (v === "light" || v === "dark") return v;
   } catch {
-    return "system";
+    /* storage unavailable: fall through */
   }
+  // honour a theme already set on the page (the inline boot script, or a host that embeds the app)
+  const attr = document.documentElement.getAttribute("data-theme");
+  return attr === "light" || attr === "dark" ? attr : "system";
 }
 
 export function useTheme() {
@@ -18,13 +21,21 @@ export function useTheme() {
     const root = document.documentElement;
     if (choice === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", choice);
-    try {
-      if (choice === "system") localStorage.removeItem(KEY);
-      else localStorage.setItem(KEY, choice);
-    } catch {
-      /* ignore */
-    }
   }, [choice]);
-  const cycle = useCallback(() => setChoice((c) => (c === "system" ? "light" : c === "light" ? "dark" : "system")), []);
+  // only an explicit toggle is remembered, so following the system theme stays the default
+  const cycle = useCallback(
+    () =>
+      setChoice((c) => {
+        const next: ThemeChoice = c === "system" ? "light" : c === "light" ? "dark" : "system";
+        try {
+          if (next === "system") localStorage.removeItem(KEY);
+          else localStorage.setItem(KEY, next);
+        } catch {
+          /* ignore */
+        }
+        return next;
+      }),
+    [],
+  );
   return { choice, cycle };
 }

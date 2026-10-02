@@ -105,3 +105,15 @@ def test_users_cannot_read_each_others_trips(client, auth):
     trip_id = next(e for e in create_trip(client, auth) if e["type"] == "itinerary")["trip_id"]
     other = client.post("/api/auth/register", json={"email": "o@example.com", "password": "pw-pw-pw-pw"}).json()["token"]
     assert client.get(f"/api/trips/{trip_id}", headers={"authorization": f"Bearer {other}"}).status_code == 404
+
+
+def test_destination_suggestions_in_demo_mode(client, auth):
+    assert client.get("/api/destinations").status_code == 401
+    everything = client.get("/api/destinations", headers=auth).json()
+    assert everything["mode"] == "demo"
+    assert [s["label"] for s in everything["suggestions"]] == ["Jaipur, India", "Goa, India", "Tokyo, Japan", "Paris, France"]
+    alias = client.get("/api/destinations", params={"q": "pink"}, headers=auth).json()["suggestions"]
+    assert alias == [{"label": "Jaipur, India", "name": "Jaipur", "detail": "India"}]
+    assert client.get("/api/destinations", params={"q": "berlin"}, headers=auth).json()["suggestions"] == []
+    ranked = client.get("/api/destinations", params={"q": "pa"}, headers=auth).json()["suggestions"]
+    assert [s["label"] for s in ranked] == ["Paris, France", "Goa, India", "Tokyo, Japan"]  # Goa via its alias Panaji

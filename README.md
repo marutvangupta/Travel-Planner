@@ -44,7 +44,7 @@ not claim the plans are the best possible. The LLM planner is evaluated with the
 - **Alerts**: a weather watcher compares fresh forecasts to the plan and raises a proposal; "Simulate" lets you try it.
 - **Sources on every stop** (place provider, forecast, guide passage) and a Wikivoyage-style guide index with hybrid retrieval.
 - **Memory that you can see.** Thumbs up/down and removals move category weights and create inferred memories with their
-  evidence. Everything is listed on the Memory page and deletable.
+  evidence. Everything is listed on the Preferences page and deletable.
 - **Cost and latency tracking** per run (tokens, USD, tool calls, repair loops, per-node time), optional Langfuse tracing.
 
 ## Architecture
@@ -52,7 +52,7 @@ not claim the plans are the best possible. The LLM planner is evaluated with the
 ```
 ┌──────────────────────── React (Vite, TypeScript, Tailwind 4, Framer Motion) ───────────────────┐
 │ Auth · Trips · Wizard + live boarding pass · Agent progress · Workspace (timeline, chart map,   │
-│ chat, what-if, history, simulate) · Memory                                                       │
+│ chat, what-if, history, simulate) · Preferences and memory                                       │
 └────────────────────────────────── REST + SSE (fetch stream) ───────────────────────────────────┘
                                           │
 ┌─────────────────────────────────── FastAPI (backend/src/travel_planner) ───────────────────────┐
@@ -140,6 +140,7 @@ come back as `{error_code, message, retryable}`. Set `TOOLS_MODE=mcp` to make th
 | Method and path | Purpose |
 |---|---|
 | `POST /api/auth/register`, `/login`, `GET /api/me` | Accounts (argon2 hashes, signed JWT) |
+| `GET /api/destinations?q=` | Destination suggestions while typing: the demo cities, or Google city autocomplete when live (Open-Meteo place search if Google refuses; the reason is logged as `suggest.google_failed`) |
 | `POST /api/trips/stream` | Create a trip; Server-Sent Events: `stage` events, then `itinerary` or `error` |
 | `GET /api/trips`, `/trips/{id}`, `DELETE` | List, open (itinerary, proposals, events, chat, last run), delete |
 | `POST /api/trips/{id}/chat` | Natural-language change or question → reply and optional proposal |
