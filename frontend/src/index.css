@@ -308,6 +308,16 @@ body {
   animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+/* marching dots along a route */
+@keyframes route-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.route-flow {
+  animation: route-flow 1.4s linear infinite;
+}
+
 /* a single pulse that draws the eye to something that just changed */
 @keyframes glow {
   0%,
