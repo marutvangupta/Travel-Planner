@@ -103,7 +103,7 @@ uvicorn travel_planner.api.main:app --reload      # http://localhost:8000  (docs
 cd frontend && npm install && npm run dev         # http://localhost:5173
 ```
 
-Open the app and choose **Explore with a demo account**. Demo mode covers Jaipur, Goa, Tokyo and Paris.
+Open the app and choose **Explore the demo**. Demo mode covers Jaipur, Goa, Tokyo and Paris.
 
 **With keys** (copy `.env.example` to `.env`): `OPENAI_API_KEY` enables LLM planning, routing and Q&A;
 `GOOGLE_MAPS_API_KEY` (Places API (New), Routes API, Geocoding API) enables any city with live hours and routing.

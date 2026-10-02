@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Brain, Plus, Sparkles, Trash2, UserRound } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { Brain, Check, Plus, Sparkles, Trash2, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Button, Chip, Segmented, Toggle, inputCls } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { useDocumentTitle } from "../lib/a11y";
 import { api } from "../lib/api";
 import { titleCase } from "../lib/format";
 import { ease, pageVariants, rise, spring, stagger } from "../lib/motion";
@@ -40,12 +41,31 @@ export default function MemoryPage() {
   const { meta } = useAuth();
   const toast = useToast();
   const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [saved, setSaved] = useState<Prefs | null>(null);
   const [mems, setMems] = useState<Memory[] | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  useDocumentTitle("Preferences and memory");
+
+  // compare everything the form edits (order-insensitive for the lists) to what the server last confirmed
+  const dirty = useMemo(() => {
+    if (!prefs || !saved) return false;
+    const norm = (p: Prefs) => JSON.stringify([p.pace, p.travel_style, p.diet, p.step_free, [...p.interests].sort(), [...p.avoid].sort()]);
+    return norm(prefs) !== norm(saved);
+  }, [prefs, saved]);
+  useEffect(() => {
+    if (dirty) setJustSaved(false);
+  }, [dirty]);
 
   useEffect(() => {
-    api<Prefs>("/preferences").then(setPrefs).catch((e) => toast(e.message, "error"));
+    api<Prefs>("/preferences")
+      .then((p) => {
+        setPrefs(p);
+        setSaved(p);
+      })
+      .catch((e) => toast(e.message, "error"));
     api<Memory[]>("/memories").then(setMems).catch(() => setMems([]));
   }, [toast]);
 
@@ -56,7 +76,10 @@ export default function MemoryPage() {
     try {
       const { category_weights: _w, ...body } = prefs;
       void _w;
-      setPrefs(await api<Prefs>("/preferences", { method: "PUT", json: body }));
+      const next = await api<Prefs>("/preferences", { method: "PUT", json: body });
+      setPrefs(next);
+      setSaved(next);
+      setJustSaved(true);
       toast("Preferences saved. New trips start from these.");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save", "error");
@@ -66,13 +89,16 @@ export default function MemoryPage() {
   };
   const addNote = async (e: FormEvent) => {
     e.preventDefault();
-    if (!note.trim()) return;
+    if (note.trim().length < 3 || adding) return;
+    setAdding(true);
     try {
       const m = await api<Memory>("/memories", { method: "POST", json: { content: note.trim() } });
       setMems((l) => [m, ...(l ?? [])]);
       setNote("");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not save that", "error");
+    } finally {
+      setAdding(false);
     }
   };
   const forget = async (id: string) => {
@@ -87,13 +113,13 @@ export default function MemoryPage() {
 
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-full">
-      <div className="mx-auto max-w-[1200px] px-4 pb-20 pt-10 sm:px-6">
+      <div className="mx-auto max-w-[1200px] px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
         <p className="label mb-3">What I know about you</p>
-        <h1 className="display mb-3 text-[clamp(44px,6vw,76px)]">Preferences and memory</h1>
-        <p className="mb-10 max-w-2xl text-muted">New trips start from your preferences. I also learn from the stops you like, dislike or remove, and everything I learn is listed here with the evidence. You can delete any of it.</p>
+        <h1 className="display mb-3 text-title">Preferences and memory</h1>
+        <p className="mb-10 max-w-2xl text-[16px] text-muted">New trips start from your preferences. I also learn from the stops you like, dislike or remove, and everything I learn is listed here with the evidence. You can delete any of it.</p>
 
         <div className="grid items-start gap-8 lg:grid-cols-2">
-          <motion.section variants={stagger(0.06)} initial="hidden" animate="show" className="card flex flex-col gap-6 p-6">
+          <motion.section variants={stagger(0.06)} initial="hidden" animate="show" className="card flex flex-col gap-6 rounded-panel p-6 sm:p-7">
             <motion.h2 variants={rise} className="display-wide flex items-center gap-2 text-2xl">
               <UserRound size={20} className="text-sea" /> Your defaults
             </motion.h2>
@@ -136,17 +162,24 @@ export default function MemoryPage() {
                     ))}
                   </div>
                 </motion.div>
-                <motion.div variants={rise}>
-                  <Button onClick={save} loading={saving}>
-                    Save preferences
+                <motion.div variants={rise} className="flex items-center gap-3 border-t border-line pt-5">
+                  <Button onClick={save} loading={saving} disabled={!dirty && !saving} icon={!dirty && justSaved ? <Check size={16} /> : undefined}>
+                    {saving ? "Saving…" : !dirty && justSaved ? "Saved" : "Save preferences"}
                   </Button>
+                  <AnimatePresence initial={false}>
+                    {dirty && !saving && (
+                      <motion.span key="dirty" initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-[13px] text-muted">
+                        <span className="h-1.5 w-1.5 rounded-full bg-warn" aria-hidden /> Unsaved changes
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               </>
             )}
           </motion.section>
 
           <div className="flex flex-col gap-8">
-            <section className="card p-6">
+            <section className="card rounded-panel p-6 sm:p-7">
               <h2 className="display-wide mb-1 flex items-center gap-2 text-2xl">
                 <Sparkles size={20} className="text-sea" /> Taste profile
               </h2>
@@ -154,14 +187,14 @@ export default function MemoryPage() {
               {prefs ? <WeightBars weights={prefs.category_weights} /> : <div className="skeleton h-32" />}
             </section>
 
-            <section className="card p-6">
+            <section className="card rounded-panel p-6 sm:p-7">
               <h2 className="display-wide mb-1 flex items-center gap-2 text-2xl">
                 <Brain size={20} className="text-sea" /> What I have learned
               </h2>
               <p className="mb-4 text-sm text-muted">Used when planning, ranked by how relevant they are to the trip.</p>
               <form onSubmit={addNote} className="mb-5 flex gap-2">
                 <input aria-label="Tell me something about how you travel" className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="I get tired of long drives" maxLength={200} />
-                <Button type="submit" variant="soft" disabled={!note.trim()} icon={<Plus size={16} />} className="shrink-0">
+                <Button type="submit" variant="soft" disabled={note.trim().length < 3} loading={adding} icon={<Plus size={16} />} className="shrink-0">
                   Add
                 </Button>
               </form>
@@ -181,7 +214,7 @@ export default function MemoryPage() {
                             <span className="mono text-[11px] text-faint">{Math.round(m.confidence * 100)}%</span>
                           </div>
                         </div>
-                        <button type="button" onClick={() => forget(m.id)} aria-label={`Forget: ${m.content}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-faint transition-colors hover:bg-surface hover:text-bad">
+                        <button type="button" onClick={() => forget(m.id)} aria-label={`Forget: ${m.content}`} data-tip="Forget this" data-tip-align="end" className="tip relative grid h-8 w-8 shrink-0 place-items-center rounded-lg text-faint transition-colors hover:bg-bad-soft hover:text-bad">
                           <Trash2 size={15} />
                         </button>
                       </div>
@@ -189,7 +222,15 @@ export default function MemoryPage() {
                   ))}
                 </AnimatePresence>
               </ul>
-              {mems && mems.length === 0 && <p className="text-sm text-faint">Nothing learned yet. Rate a few stops in a trip, or add a note above.</p>}
+              {mems === null && (
+                <div className="flex flex-col gap-3" aria-hidden>
+                  <div className="skeleton h-[84px] rounded-xl" />
+                  <div className="skeleton h-[84px] rounded-xl opacity-70" />
+                </div>
+              )}
+              {mems && mems.length === 0 && (
+                <p className="rounded-xl border border-dashed border-line-strong px-4 py-5 text-center text-sm text-muted">Nothing learned yet. Rate a few stops in a trip, or add a note above.</p>
+              )}
             </section>
           </div>
         </div>

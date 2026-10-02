@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, Eye, History, MessageSquare, Send, Sparkles, X, Zap } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, Eye, History, MessageSquare, Send, Sparkles, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../../lib/api";
 import { inr } from "../../lib/format";
@@ -11,7 +11,7 @@ import { Citations, KindBadge } from "./parts";
 /* ------------------------------------------------------------------------------------- proposal card */
 
 export function ProposalCard({
-  diff, reason, affected, notes, onPreview, onAccept, onReject, previewing, busy, applyLabel = "Accept change",
+  diff, reason, affected, notes, onPreview, onAccept, onReject, previewing, busy, applied, applyLabel = "Apply change",
 }: {
   diff: Diff;
   reason?: string;
@@ -22,6 +22,8 @@ export function ProposalCard({
   onReject?: () => void;
   previewing?: boolean;
   busy?: boolean;
+  /** once applied, the card becomes a record: no actions, just the outcome */
+  applied?: boolean;
   applyLabel?: string;
 }) {
   return (
@@ -54,10 +56,14 @@ export function ProposalCard({
         </ul>
         {notes && notes.length > 0 && <p className="text-xs text-muted">{notes.join(" ")}</p>}
       </div>
-      {(onAccept || onPreview || onReject) && (
+      {applied ? (
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 border-t border-line bg-good-soft/50 px-4 py-3 text-[13px] font-semibold text-good">
+          <CheckCircle2 size={15} /> Applied to your plan
+        </motion.p>
+      ) : (onAccept || onPreview || onReject) && (
         <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
           {onAccept && (
-            <Button size="sm" onClick={onAccept} loading={busy} icon={<Check size={14} />}>
+            <Button size="sm" variant="signal" onClick={onAccept} loading={busy} icon={<Check size={14} />}>
               {applyLabel}
             </Button>
           )}
@@ -90,9 +96,10 @@ interface Bubble {
 const THINKING = ["Reading your itinerary", "Checking opening hours", "Finding what is affected", "Re-planning only what changed", "Verifying the result"];
 
 export function ChatPanel({
-  tripId, messages, itinerary, previewId, onPreview, onAccept, onReject, onAfterSend, busyId,
+  tripId, messages, itinerary, previewId, appliedId, onPreview, onAccept, onReject, onAfterSend, busyId,
 }: {
   tripId: string;
+  appliedId: string | null;
   messages: ChatMessage[];
   itinerary: Itinerary;
   previewId: string | null;
@@ -157,10 +164,15 @@ export function ChatPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {all.length === 0 && (
-          <div className="mb-4 rounded-2xl border border-dashed border-line p-4">
-            <p className="display-wide mb-1 text-lg">Change anything in plain words</p>
-            <p className="text-sm text-muted">Swap a stop, cut the budget, slow the pace, or tell me it is going to rain. I will show the change before it applies.</p>
-          </div>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="mb-4 flex gap-3 rounded-2xl border border-dashed border-line-strong p-4">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-sea-soft text-sea">
+              <Sparkles size={17} />
+            </span>
+            <div>
+              <p className="display-wide mb-1 text-lg">Change anything in plain words</p>
+              <p className="text-sm text-muted">Swap a stop, cut the budget, slow the pace, or say it's going to rain. You'll see the change before anything is applied.</p>
+            </div>
+          </motion.div>
         )}
         <motion.ul variants={stagger(0.04)} initial="hidden" animate="show" className="m-0 flex flex-col gap-3 p-0">
           {all.map((b) => (
@@ -181,6 +193,7 @@ export function ChatPanel({
                     notes={b.proposal.notes}
                     previewing={previewId === b.proposal.version_id}
                     busy={busyId === b.proposal.version_id}
+                    applied={appliedId === b.proposal.version_id}
                     onPreview={() => onPreview(b.proposal!)}
                     onAccept={() => onAccept(b.proposal!)}
                     onReject={() => {
@@ -211,18 +224,16 @@ export function ChatPanel({
         </AnimatePresence>
       </div>
       <div className="border-t border-line p-3">
-        <div className="mb-2.5 flex gap-1.5 overflow-x-auto pb-1">
+        <div className="no-scrollbar fade-x -mx-3 mb-2.5 flex gap-1.5 overflow-x-auto px-3" aria-label="Suggestions">
           {suggestions.map((s) => (
-            <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:border-sea hover:text-sea disabled:opacity-50">
+            <button key={s} type="button" onClick={() => send(s)} disabled={busy} className="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:border-sea/60 hover:bg-sea-soft/40 hover:text-sea disabled:opacity-50">
               {s}
             </button>
           ))}
         </div>
         <form onSubmit={onSubmit} className="flex gap-2">
           <input aria-label="Message" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Swap the fort for something indoors…" className={inputCls} maxLength={600} />
-          <Button type="submit" disabled={!input.trim()} loading={busy} aria-label="Send" className="!px-3.5">
-            <Send size={16} />
-          </Button>
+          <Button type="submit" disabled={!input.trim()} loading={busy} aria-label="Send" className="w-11 !px-0" icon={busy ? undefined : <Send size={16} />} />
         </form>
       </div>
     </div>
@@ -314,9 +325,10 @@ interface WhatIfResult {
 }
 
 export function WhatIfPanel({
-  tripId, budget, previewId, onPreview, onAccept, busyId, onAfterRun,
+  tripId, budget, previewId, appliedId, onPreview, onAccept, busyId, onAfterRun,
 }: {
   tripId: string;
+  appliedId: string | null;
   budget: number;
   previewId: string | null;
   onPreview: (p: Proposal) => void;
@@ -367,9 +379,7 @@ export function WhatIfPanel({
         </div>
         <form onSubmit={(e) => { e.preventDefault(); void run(text); }} className="mt-3 flex gap-2">
           <input aria-label="Describe a scenario" value={text} onChange={(e) => setText(e.target.value)} placeholder="What if I cut the budget by ₹15,000?" className={inputCls} maxLength={400} />
-          <Button type="submit" variant="soft" disabled={!text.trim()} loading={!!busy && busy === text.trim()} aria-label="Run scenario" className="!px-3.5">
-            <ArrowRight size={16} />
-          </Button>
+          <Button type="submit" variant="soft" disabled={!text.trim()} loading={!!busy && busy === text.trim()} aria-label="Run scenario" className="w-11 !px-0" icon={<ArrowRight size={16} />} />
         </form>
       </div>
       <div className="flex flex-1 flex-col gap-4 px-4 pb-6">
@@ -398,14 +408,20 @@ export function WhatIfPanel({
                     <Coverage diff={r.proposal.diff} />
                   </div>
                   {r.proposal.notes.length > 0 && <p className="text-xs text-muted">{r.proposal.notes.join(" ")}</p>}
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => onAccept(r.proposal!)} loading={busyId === r.proposal.version_id} icon={<Check size={14} />}>
-                      Apply
-                    </Button>
-                    <Button size="sm" variant={previewId === r.proposal.version_id ? "soft" : "ghost"} onClick={() => onPreview(r.proposal!)} icon={<Eye size={14} />}>
-                      {previewId === r.proposal.version_id ? "Previewing" : "Preview on timeline"}
-                    </Button>
-                  </div>
+                  {appliedId === r.proposal.version_id ? (
+                    <p className="flex items-center gap-2 rounded-[10px] bg-good-soft px-3 py-2 text-[13px] font-semibold text-good">
+                      <CheckCircle2 size={15} /> Applied to your plan
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="signal" onClick={() => onAccept(r.proposal!)} loading={busyId === r.proposal.version_id} icon={<Check size={14} />}>
+                        Apply change
+                      </Button>
+                      <Button size="sm" variant={previewId === r.proposal.version_id ? "soft" : "ghost"} onClick={() => onPreview(r.proposal!)} icon={<Eye size={14} />}>
+                        {previewId === r.proposal.version_id ? "Previewing" : "Preview on timeline"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="px-4 py-4 text-sm text-muted">{r.reply}</p>

@@ -11,8 +11,13 @@ import TripsPage from "./pages/TripsPage";
 
 function Splash() {
   return (
-    <div className="grid h-full place-items-center">
-      <motion.div animate={{ scale: [1, 1.12, 1], rotate: [0, 12, 0] }} transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}>
+    <div role="status" aria-label="Loading Waypoint" className="grid h-full place-items-center">
+      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.15 }} className="relative grid place-items-center">
+        <motion.span
+          className="absolute h-11 w-11 rounded-[12px] border border-sea"
+          animate={{ scale: [1, 1.7], opacity: [0.5, 0] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: "easeOut" }}
+        />
         <LogoMark size={44} />
       </motion.div>
     </div>
@@ -27,7 +32,8 @@ function Protected() {
   if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   return (
     <AppShell>
-      <AnimatePresence mode="wait" initial={false}>
+      {/* the next page starts at the top, but only once the previous one has faded out */}
+      <AnimatePresence mode="wait" initial={false} onExitComplete={() => window.scrollTo(0, 0)}>
         <motion.div key={loc.pathname} className="min-h-full">
           {outlet}
         </motion.div>

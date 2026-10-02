@@ -1,12 +1,13 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, ArrowRight, Building2, Castle, Check, Landmark, Minus, Moon, Mountain, Palette, Plus, ShoppingBag, Sparkles, Trees, Utensils, Waves, type LucideIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button, Chip, CountUp, Field, Segmented, Toggle, inputCls } from "../components/ui";
+import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from "framer-motion";
+import { ArrowLeft, ArrowRight, Building2, Castle, Check, Landmark, Minus, Moon, Mountain, Palette, Plus, RotateCw, ShoppingBag, Sparkles, Trees, Utensils, Waves, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Button, Chip, CountUp, Field, FieldMessage, Perforation, Segmented, Toggle, inputCls } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
+import { useDocumentTitle } from "../lib/a11y";
 import { ApiError, api, streamTrip } from "../lib/api";
 import { addDays, cityName, dateRange, daysBetween, inr, titleCase, toIso } from "../lib/format";
-import { ease, pageVariants, spring } from "../lib/motion";
+import { ease, pageVariants, shake, spring } from "../lib/motion";
 import type { Prefs, StageEvent, TripRequest } from "../lib/types";
 
 const INTEREST_ICON: Record<string, LucideIcon> = {
@@ -15,6 +16,8 @@ const INTEREST_ICON: Record<string, LucideIcon> = {
 };
 const COST_TIER: Record<string, [number, number]> = { jaipur: [2500, 5000], goa: [3500, 7000], tokyo: [7000, 13000], paris: [8000, 15000] };
 const STEPS = ["Where and when", "Budget and pace", "What you enjoy", "Your needs"];
+const TITLES = ["Where are you headed?", "What's the budget and pace?", "What do you enjoy?", "Anything we should respect?"];
+const MAX_DAYS = 10;
 
 function tierFor(dest: string): [number, number] {
   const k = Object.keys(COST_TIER).find((c) => dest.toLowerCase().includes(c));
@@ -23,16 +26,44 @@ function tierFor(dest: string): [number, number] {
 
 const defaultStart = () => toIso(new Date(Date.now() + 21 * 86400000));
 
+type StepErrors = { destination?: string; dates?: string; interests?: string };
+
+function stepErrors(step: number, form: TripRequest, days: number): StepErrors {
+  if (step === 0) {
+    const e: StepErrors = {};
+    if (form.destination.trim().length < 2) e.destination = "Where are you going? Pick a city below or type one.";
+    if (!form.start_date || !form.end_date) e.dates = "Choose both dates.";
+    else if (form.end_date < form.start_date) e.dates = "The trip ends before it starts. Check the dates.";
+    else if (days > MAX_DAYS) e.dates = `Plans cover up to ${MAX_DAYS} days. This one is ${days}.`;
+    return e;
+  }
+  if (step === 2 && form.interests.length === 0) return { interests: "Pick at least one, so the plan has a direction." };
+  return {};
+}
+
 export default function NewTripPage() {
   const nav = useNavigate();
+  const [params] = useSearchParams();
   const { meta } = useAuth();
   const [step, setStep] = useState(0);
+  const [visited, setVisited] = useState(0);
   const [dir, setDir] = useState(1);
   const [phase, setPhase] = useState<"form" | "run">("form");
+  const [attempt, setAttempt] = useState(0);
+  const [shown, setShown] = useState<StepErrors>({});
   const [form, setForm] = useState<TripRequest>(() => {
     const s = defaultStart();
-    return { destination: "", start_date: s, end_date: addDays(s, 3), budget_inr: 50000, travelers: 2, interests: [], travel_style: "balanced", pace: "balanced", constraints_text: "", diet: "none", step_free: false, avoid: [], late_starts: false };
+    return { destination: params.get("to") ?? "", start_date: s, end_date: addDays(s, 3), budget_inr: 50000, travelers: 2, interests: [], travel_style: "balanced", pace: "balanced", constraints_text: "", diet: "none", step_free: false, avoid: [], late_starts: false };
   });
+  const content = useAnimationControls();
+  const destRef = useRef<HTMLInputElement>(null);
+  const endRef = useRef<HTMLInputElement>(null);
+  const interestsRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
+  const prefilled = !!params.get("to");
+  useDocumentTitle(phase === "run" ? `Planning ${cityName(form.destination)}` : "Plan a trip");
+
   const set = <K extends keyof TripRequest>(k: K, v: TripRequest[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -41,152 +72,254 @@ export default function NewTripPage() {
 
   const days = daysBetween(form.start_date, form.end_date);
   const [lean, comfy] = tierFor(form.destination);
-  const perPersonDay = form.budget_inr / Math.max(days * form.travelers, 1);
+  const perPersonDay = form.budget_inr / (Math.max(days, 1) * form.travelers);
   const tier = perPersonDay < lean ? { label: "Lean", tone: "text-warn" } : perPersonDay < comfy ? { label: "Comfortable", tone: "text-good" } : { label: "Generous", tone: "text-sea" };
 
-  const valid = [
-    form.destination.trim().length >= 2 && days >= 1 && days <= 10,
-    form.budget_inr >= 1000,
-    form.interests.length >= 1,
-    true,
-  ][step];
-  const go = (d: number) => {
-    setDir(d);
-    setStep((s) => Math.max(0, Math.min(STEPS.length - 1, s + d)));
+  // messages appear after a Continue attempt, then update live (and clear) as the fields are fixed
+  const live = stepErrors(step, form, days);
+  const errors: StepErrors = {
+    destination: shown.destination && live.destination,
+    dates: shown.dates && live.dates,
+    interests: shown.interests && live.interests,
   };
-  const suggestions = meta?.destinations ?? ["Jaipur, India", "Goa, India", "Tokyo, Japan", "Paris, France"];
 
-  if (phase === "run") return <RunScreen form={form} onBack={() => setPhase("form")} onDone={(id) => nav(`/trips/${id}`, { replace: true })} />;
+  // after a step change, put focus on the new heading: screen readers announce the step and Tab continues into it
+  useEffect(() => {
+    if (!moved.current) return;
+    const t = window.setTimeout(() => headingRef.current?.focus({ preventScroll: true }), 340);
+    return () => window.clearTimeout(t);
+  }, [step]);
+
+  const goTo = (target: number) => {
+    if (target === step) return;
+    moved.current = true;
+    setDir(target > step ? 1 : -1);
+    setShown({});
+    setStep(target);
+    setVisited((v) => Math.max(v, target));
+  };
+  const next = (e?: FormEvent) => {
+    e?.preventDefault();
+    const errs = stepErrors(step, form, days);
+    if (Object.keys(errs).length) {
+      setShown(errs);
+      void content.start(shake);
+      if (errs.destination) destRef.current?.focus();
+      else if (errs.dates) endRef.current?.focus();
+      else if (errs.interests) interestsRef.current?.focus();
+      return;
+    }
+    if (step < STEPS.length - 1) goTo(step + 1);
+    else setPhase("run");
+  };
+
+  const suggestions = meta?.destinations ?? ["Jaipur, India", "Goa, India", "Tokyo, Japan", "Paris, France"];
+  const budget = Math.min(Math.max(form.budget_inr, 5000), 400000);
+  const last = step === STEPS.length - 1;
+
+  if (phase === "run")
+    return (
+      <RunScreen
+        key={attempt}
+        form={form}
+        onBack={() => setPhase("form")}
+        onRetry={() => setAttempt((a) => a + 1)}
+        onDone={(id) => nav(`/trips/${id}`, { replace: true })}
+      />
+    );
+
+  const actions = (
+    <>
+      <Button variant="ghost" size="lg" type="button" onClick={() => goTo(step - 1)} disabled={step === 0} icon={<ArrowLeft size={17} />} aria-label="Back to the previous step">
+        <span className="hidden sm:inline">Back</span>
+      </Button>
+      {!last ? (
+        <Button size="lg" type="submit" className="flex-1 sm:flex-none" iconRight={<ArrowRight size={17} />}>
+          Continue
+        </Button>
+      ) : (
+        <Button size="lg" variant="signal" type="submit" className="flex-1 sm:flex-none" icon={<Sparkles size={17} />}>
+          Build my itinerary
+        </Button>
+      )}
+    </>
+  );
 
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-full">
-      <div className="mx-auto grid max-w-[1200px] gap-10 px-4 pb-20 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div>
-          <Stepper step={step} />
-          <div className="relative mt-10 min-h-[430px]">
+      <form onSubmit={next} noValidate className="mx-auto grid max-w-[1200px] gap-10 px-4 pb-36 pt-8 sm:px-6 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_380px] lg:pb-24">
+        <div className="min-w-0">
+          <Stepper step={step} visited={visited} onJump={goTo} />
+          <div className="relative mt-9 min-h-[440px]">
             <AnimatePresence mode="wait" custom={dir} initial={false}>
               <motion.div
                 key={step}
                 custom={dir}
-                variants={{ enter: (d: number) => ({ opacity: 0, x: 48 * d, filter: "blur(6px)" }), center: { opacity: 1, x: 0, filter: "blur(0px)" }, exit: (d: number) => ({ opacity: 0, x: -48 * d, filter: "blur(6px)" }) }}
-                initial="enter" animate="center" exit="exit" transition={{ duration: 0.34, ease: [...ease] }}
+                variants={{ enter: (d: number) => ({ opacity: 0, x: 28 * d }), center: { opacity: 1, x: 0 }, exit: (d: number) => ({ opacity: 0, x: -20 * d }) }}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.3, ease: [...ease] }}
               >
                 <p className="label mb-3">
                   Step {step + 1} of {STEPS.length}
                 </p>
-                <h1 className="display mb-8 text-[clamp(40px,5.5vw,64px)]">{["Where are you headed?", "What's the budget and pace?", "What do you enjoy?", "Anything we should respect?"][step]}</h1>
+                <h1 ref={headingRef} tabIndex={-1} className="display mb-8 text-heading outline-none">
+                  {TITLES[step]}
+                </h1>
 
-                {step === 0 && (
-                  <div className="flex max-w-xl flex-col gap-6">
-                    <Field label="Destination" htmlFor="dest">
-                      <input id="dest" className={`${inputCls} !h-14 !text-lg`} value={form.destination} onChange={(e) => set("destination", e.target.value)} placeholder="Jaipur, India" autoFocus />
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {suggestions.map((s) => (
-                          <Chip key={s} active={form.destination === s} onClick={() => set("destination", s)}>
-                            {s}
-                          </Chip>
-                        ))}
-                      </div>
-                    </Field>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Field label="From" htmlFor="start">
-                        <input id="start" type="date" className={inputCls} value={form.start_date} min={toIso(new Date())} onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, start_date: v, end_date: f.end_date < v ? addDays(v, 2) : f.end_date })); }} />
+                <motion.div animate={content}>
+                  {step === 0 && (
+                    <div className="flex max-w-xl flex-col gap-7">
+                      <Field label="Destination" htmlFor="dest" error={errors.destination} messageId="dest-msg">
+                        <input
+                          ref={destRef}
+                          id="dest"
+                          className={`${inputCls} !h-14 !rounded-[12px] !px-4 !text-lg`}
+                          value={form.destination}
+                          onChange={(e) => set("destination", e.target.value)}
+                          placeholder="Jaipur, India"
+                          autoComplete="off"
+                          autoFocus={!prefilled}
+                          aria-invalid={errors.destination ? true : undefined}
+                          aria-describedby={errors.destination ? "dest-msg" : undefined}
+                        />
+                        <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Demo destinations">
+                          {suggestions.map((s) => (
+                            <Chip key={s} active={form.destination === s} onClick={() => set("destination", s)}>
+                              {s}
+                            </Chip>
+                          ))}
+                        </div>
                       </Field>
-                      <Field label="To" htmlFor="end" hint={days > 10 ? "Plans cover up to 10 days." : `${days} day${days > 1 ? "s" : ""}`}>
-                        <input id="end" type="date" className={inputCls} value={form.end_date} min={form.start_date} onChange={(e) => set("end_date", e.target.value)} />
+                      <div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <Field label="From" htmlFor="start">
+                            <input
+                              id="start"
+                              type="date"
+                              className={inputCls}
+                              value={form.start_date}
+                              min={toIso(new Date())}
+                              aria-invalid={errors.dates ? true : undefined}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setForm((f) => ({ ...f, start_date: v, end_date: f.end_date < v ? addDays(v, 2) : f.end_date }));
+                              }}
+                            />
+                          </Field>
+                          <Field label="To" htmlFor="end" aside={days >= 1 && <span className="mono text-xs text-muted">{days} day{days === 1 ? "" : "s"}</span>}>
+                            <input
+                              ref={endRef}
+                              id="end"
+                              type="date"
+                              className={inputCls}
+                              value={form.end_date}
+                              min={form.start_date}
+                              aria-invalid={errors.dates ? true : undefined}
+                              aria-describedby={errors.dates ? "dates-msg" : undefined}
+                              onChange={(e) => set("end_date", e.target.value)}
+                            />
+                          </Field>
+                        </div>
+                        <FieldMessage id="dates-msg" error={errors.dates} hint={!errors.dates && days > MAX_DAYS - 2 && days <= MAX_DAYS ? `Up to ${MAX_DAYS} days per plan.` : undefined} />
+                      </div>
+                      <Field label="Travellers">
+                        <div className="flex items-center gap-4">
+                          <Counter value={form.travelers} onChange={(v) => set("travelers", v)} min={1} max={12} />
+                          <span className="text-sm text-muted">{form.travelers === 1 ? "Solo" : form.travelers === 2 ? "A pair" : "A group"}</span>
+                        </div>
                       </Field>
                     </div>
-                    <Field label="Travellers">
-                      <div className="flex items-center gap-4">
-                        <Stepper2 value={form.travelers} onChange={(v) => set("travelers", v)} min={1} max={12} />
-                        <span className="text-sm text-muted">{form.travelers === 1 ? "Solo" : form.travelers === 2 ? "A pair" : "A group"}</span>
-                      </div>
-                    </Field>
-                  </div>
-                )}
+                  )}
 
-                {step === 1 && (
-                  <div className="flex max-w-xl flex-col gap-8">
-                    <Field label="Total budget for activities, food and local transport" htmlFor="budget" hint="Flights and lodging are not included.">
-                      <div className="flex items-end gap-4">
-                        <span className="display-wide text-[52px] leading-none">
-                          <CountUp value={form.budget_inr} format={inr} duration={0.5} />
-                        </span>
-                        <span className={`mb-1.5 text-sm font-semibold ${tier.tone}`}>
-                          {tier.label} · <span className="mono">{inr(perPersonDay)}</span> per person per day
-                        </span>
-                      </div>
-                      <input id="budget" type="range" min={5000} max={400000} step={1000} value={Math.min(Math.max(form.budget_inr, 5000), 400000)} onChange={(e) => set("budget_inr", Number(e.target.value))} className="budget-range mt-4 w-full" style={{ ["--fill" as string]: `${((Math.min(Math.max(form.budget_inr, 5000), 400000) - 5000) / 395000) * 100}%` }} aria-label="Budget in rupees" />
-                      <div className="mono flex justify-between text-[11px] text-faint">
-                        <span>₹5k</span>
-                        <span>₹4L</span>
-                      </div>
-                    </Field>
-                    <Field label="Pace">
-                      <Segmented label="Pace" value={form.pace} onChange={(v) => set("pace", v)} options={[{ value: "relaxed", label: "Relaxed", hint: "2 sights a day" }, { value: "balanced", label: "Balanced", hint: "3 sights a day" }, { value: "packed", label: "Packed", hint: "5 sights a day" }]} />
-                    </Field>
-                    <Field label="Style">
-                      <Segmented label="Style" value={form.travel_style} onChange={(v) => set("travel_style", v)} options={[{ value: "budget", label: "Budget" }, { value: "balanced", label: "Balanced" }, { value: "luxury", label: "Luxury" }]} />
-                    </Field>
-                  </div>
-                )}
+                  {step === 1 && (
+                    <div className="flex max-w-xl flex-col gap-8">
+                      <Field label="Budget for activities, food and local transport" htmlFor="budget" hint="Flights and lodging are not included.">
+                        <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+                          <span className="display-wide text-[48px] leading-none">
+                            <CountUp value={form.budget_inr} format={inr} duration={0.5} />
+                          </span>
+                          <span className={`mb-1 text-sm font-semibold ${tier.tone}`}>
+                            {tier.label} · <span className="mono">{inr(perPersonDay)}</span> <span className="font-normal text-muted">per person per day</span>
+                          </span>
+                        </div>
+                        <input
+                          id="budget"
+                          type="range"
+                          min={5000}
+                          max={400000}
+                          step={1000}
+                          value={budget}
+                          onChange={(e) => set("budget_inr", Number(e.target.value))}
+                          className="budget-range mt-5 w-full"
+                          style={{ ["--fill" as string]: `${((budget - 5000) / 395000) * 100}%` }}
+                          aria-valuetext={`${inr(budget)}, ${tier.label.toLowerCase()}`}
+                        />
+                        <div className="mono mt-1.5 flex justify-between text-[11px] text-faint">
+                          <span>₹5k</span>
+                          <span>₹4L</span>
+                        </div>
+                      </Field>
+                      <Field label="Pace">
+                        <Segmented label="Pace" value={form.pace} onChange={(v) => set("pace", v)} options={[{ value: "relaxed", label: "Relaxed", hint: "2 sights a day" }, { value: "balanced", label: "Balanced", hint: "3 sights a day" }, { value: "packed", label: "Packed", hint: "5 sights a day" }]} />
+                      </Field>
+                      <Field label="Style">
+                        <Segmented label="Style" value={form.travel_style} onChange={(v) => set("travel_style", v)} options={[{ value: "budget", label: "Budget" }, { value: "balanced", label: "Balanced" }, { value: "luxury", label: "Luxury" }]} />
+                      </Field>
+                    </div>
+                  )}
 
-                {step === 2 && (
-                  <div className="max-w-2xl">
-                    <p className="mb-5 text-muted">Pick a few. They shape which places I choose first.</p>
-                    <motion.div layout className="flex flex-wrap gap-2.5">
-                      {(meta?.interests ?? Object.keys(INTEREST_ICON)).map((i) => {
-                        const Icon = INTEREST_ICON[i] ?? Sparkles;
-                        const on = form.interests.includes(i);
-                        return (
-                          <Chip key={i} active={on} icon={<Icon size={15} />} onClick={() => set("interests", on ? form.interests.filter((x) => x !== i) : [...form.interests, i])}>
-                            {titleCase(i)}
-                          </Chip>
-                        );
-                      })}
-                    </motion.div>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div className="flex max-w-xl flex-col gap-5">
-                    <Field label="Diet">
-                      <Segmented label="Diet" value={form.diet} onChange={(v) => set("diet", v)} options={[{ value: "none", label: "No preference" }, { value: "vegetarian", label: "Vegetarian" }, { value: "vegan", label: "Vegan" }]} />
-                    </Field>
-                    <Toggle checked={form.step_free} onChange={(v) => set("step_free", v)} label="Step-free access" hint="Skip places with stairs or steep climbs." />
-                    <Toggle checked={form.late_starts} onChange={(v) => set("late_starts", v)} label="No early mornings" hint="Days start at 10:30 instead of 09:00." />
-                    <Field label="Skip these">
-                      <div className="flex flex-wrap gap-1.5">
-                        {["museum", "temple", "fort", "market", "nightlife", "shopping", "beach"].map((a) => (
-                          <Chip key={a} tone="signal" active={form.avoid.includes(a)} onClick={() => set("avoid", form.avoid.includes(a) ? form.avoid.filter((x) => x !== a) : [...form.avoid, a])}>
-                            {titleCase(a)}
-                          </Chip>
-                        ))}
+                  {step === 2 && (
+                    <div className="max-w-2xl">
+                      <p className="mb-5 text-muted">Pick a few. They decide which places come first.</p>
+                      <div ref={interestsRef} tabIndex={-1} role="group" aria-label="Interests" aria-describedby={errors.interests ? "interests-msg" : undefined} className="flex flex-wrap gap-2.5 rounded-[12px] outline-none">
+                        {(meta?.interests ?? Object.keys(INTEREST_ICON)).map((i) => {
+                          const Icon = INTEREST_ICON[i] ?? Sparkles;
+                          const on = form.interests.includes(i);
+                          return (
+                            <Chip key={i} active={on} icon={<Icon size={15} />} onClick={() => set("interests", on ? form.interests.filter((x) => x !== i) : [...form.interests, i])}>
+                              {titleCase(i)}
+                            </Chip>
+                          );
+                        })}
                       </div>
-                    </Field>
-                    <Field label="Anything else" htmlFor="notes" hint="For example: we love sunsets, travelling with a toddler, no crowds.">
-                      <textarea id="notes" rows={3} className={`${inputCls} !h-auto py-3`} value={form.constraints_text} onChange={(e) => set("constraints_text", e.target.value)} maxLength={400} />
-                    </Field>
-                  </div>
-                )}
+                      <FieldMessage id="interests-msg" error={errors.interests} hint={form.interests.length ? `${form.interests.length} selected` : undefined} />
+                    </div>
+                  )}
+
+                  {step === 3 && (
+                    <div className="flex max-w-xl flex-col gap-5">
+                      <Field label="Diet">
+                        <Segmented label="Diet" value={form.diet} onChange={(v) => set("diet", v)} options={[{ value: "none", label: "No preference" }, { value: "vegetarian", label: "Vegetarian" }, { value: "vegan", label: "Vegan" }]} />
+                      </Field>
+                      <Toggle checked={form.step_free} onChange={(v) => set("step_free", v)} label="Step-free access" hint="Skip places with stairs or steep climbs." />
+                      <Toggle checked={form.late_starts} onChange={(v) => set("late_starts", v)} label="No early mornings" hint="Days start at 10:30 instead of 09:00." />
+                      <Field label="Skip these">
+                        <div className="flex flex-wrap gap-1.5">
+                          {["museum", "temple", "fort", "market", "nightlife", "shopping", "beach"].map((a) => (
+                            <Chip key={a} tone="signal" active={form.avoid.includes(a)} onClick={() => set("avoid", form.avoid.includes(a) ? form.avoid.filter((x) => x !== a) : [...form.avoid, a])}>
+                              {titleCase(a)}
+                            </Chip>
+                          ))}
+                        </div>
+                      </Field>
+                      <Field
+                        label="Anything else"
+                        htmlFor="notes"
+                        aside={<span className="mono text-[11px] text-faint">{form.constraints_text.length}/400</span>}
+                        hint="For example: we love sunsets, travelling with a toddler, no crowds."
+                      >
+                        <textarea id="notes" rows={3} className={`${inputCls} !h-auto resize-none py-3 leading-relaxed`} value={form.constraints_text} onChange={(e) => set("constraints_text", e.target.value)} maxLength={400} />
+                      </Field>
+                    </div>
+                  )}
+                </motion.div>
               </motion.div>
             </AnimatePresence>
           </div>
 
-          <div className="mt-10 flex items-center gap-3">
-            <Button variant="ghost" size="lg" onClick={() => go(-1)} disabled={step === 0} icon={<ArrowLeft size={17} />}>
-              Back
-            </Button>
-            {step < STEPS.length - 1 ? (
-              <Button size="lg" onClick={() => go(1)} disabled={!valid}>
-                Continue <ArrowRight size={17} />
-              </Button>
-            ) : (
-              <Button size="lg" variant="signal" onClick={() => setPhase("run")} disabled={!valid} icon={<Sparkles size={17} />}>
-                Build my itinerary
-              </Button>
-            )}
-          </div>
+          <div className="mt-10 hidden items-center gap-3 sm:flex">{actions}</div>
         </div>
 
         <aside className="hidden lg:block">
@@ -194,51 +327,73 @@ export default function NewTripPage() {
             <BoardingPass form={form} days={days} tier={tier.label} />
           </div>
         </aside>
-      </div>
+
+        {/* phones: the actions stay under the thumb, with the trip so far as a one-line summary */}
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-[color-mix(in_srgb,var(--bg)_88%,transparent)] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:hidden">
+          <p className="mono mb-2.5 truncate text-[11px] uppercase tracking-[0.06em] text-muted">
+            {form.destination.trim() ? cityName(form.destination) : "Anywhere"} · {days} day{days === 1 ? "" : "s"} · {inr(form.budget_inr)} · {form.travelers} {form.travelers === 1 ? "traveller" : "travellers"}
+          </p>
+          <div className="flex items-center gap-2.5">{actions}</div>
+        </div>
+      </form>
     </motion.div>
   );
 }
 
-function Stepper({ step }: { step: number }) {
+function Stepper({ step, visited, onJump }: { step: number; visited: number; onJump: (i: number) => void }) {
   return (
-    <ol className="m-0 flex items-center gap-0 p-0" aria-label="Progress">
-      {STEPS.map((s, i) => {
-        const done = i < step;
-        const on = i === step;
-        return (
-          <li key={s} className="flex list-none items-center">
-            <div className="flex items-center gap-2.5">
-              <motion.span animate={{ scale: on ? 1.08 : 1, backgroundColor: done || on ? "var(--sea)" : "var(--surface-2)" }} transition={spring} className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold ${done || on ? "border-sea text-sea-ink" : "border-line text-faint"}`}>
-                {done ? <Check size={14} /> : <span className="mono">{i + 1}</span>}
-              </motion.span>
-              <span className={`hidden text-[13px] font-medium md:block ${on ? "text-ink" : "text-faint"}`}>{s}</span>
-            </div>
-            {i < STEPS.length - 1 && (
-              <span className="relative mx-3 h-px w-8 bg-line sm:w-14">
-                <motion.span className="absolute inset-y-0 left-0 bg-sea" initial={false} animate={{ width: done ? "100%" : "0%" }} transition={{ duration: 0.5, ease: [...ease] }} />
-              </span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <nav aria-label="Trip steps">
+      <ol className="m-0 flex items-center p-0">
+        {STEPS.map((s, i) => {
+          const done = i < step;
+          const on = i === step;
+          const reachable = i <= visited && !on;
+          return (
+            <li key={s} className={`flex list-none items-center ${i < STEPS.length - 1 ? "min-w-0 flex-1" : ""}`}>
+              <button
+                type="button"
+                onClick={() => reachable && onJump(i)}
+                disabled={!reachable && !on}
+                aria-current={on ? "step" : undefined}
+                aria-label={`Step ${i + 1}: ${s}${done ? ", done" : ""}`}
+                className={`group flex shrink-0 items-center gap-2.5 rounded-full py-1 pr-1 transition-opacity disabled:cursor-default ${reachable ? "" : "cursor-default"}`}
+              >
+                <motion.span
+                  animate={{ scale: on ? 1.06 : 1, backgroundColor: done || on ? "var(--sea)" : "var(--surface)" }}
+                  transition={spring}
+                  className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold transition-shadow ${done || on ? "border-sea text-sea-ink" : "border-line-strong text-faint"} ${on ? "shadow-[0_0_0_4px_color-mix(in_srgb,var(--sea)_16%,transparent)]" : ""} ${reachable ? "group-hover:shadow-[0_0_0_4px_color-mix(in_srgb,var(--sea)_12%,transparent)]" : ""}`}
+                >
+                  {done ? <Check size={14} strokeWidth={2.6} /> : <span className="mono">{i + 1}</span>}
+                </motion.span>
+                <span className={`hidden whitespace-nowrap text-[13px] font-medium transition-colors md:block ${on ? "text-ink" : reachable ? "text-muted group-hover:text-ink" : "text-faint"}`}>{s}</span>
+              </button>
+              {i < STEPS.length - 1 && (
+                <span className="relative mx-3 h-px min-w-4 flex-1 bg-line">
+                  <motion.span className="absolute inset-0 origin-left bg-sea" initial={false} animate={{ scaleX: done ? 1 : 0 }} transition={{ duration: 0.5, ease: [...ease] }} />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
-function Stepper2({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
+function Counter({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
   return (
-    <div className="inline-flex items-center rounded-xl border border-line bg-surface">
-      <button type="button" aria-label="Fewer travellers" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} className="grid h-11 w-11 place-items-center text-muted transition-colors hover:text-ink disabled:opacity-30">
+    <div className="inline-flex items-center rounded-[12px] border border-line bg-surface shadow-xs" role="group" aria-label="Travellers">
+      <button type="button" aria-label="Fewer travellers" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min} className="grid h-11 w-11 place-items-center rounded-l-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent">
         <Minus size={16} />
       </button>
-      <span className="relative grid h-11 w-12 place-items-center overflow-hidden">
+      <span className="relative grid h-11 w-12 place-items-center overflow-hidden border-x border-line" aria-live="polite">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span key={value} initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -16, opacity: 0 }} transition={{ duration: 0.18 }} className="mono text-lg font-semibold">
             {value}
           </motion.span>
         </AnimatePresence>
       </span>
-      <button type="button" aria-label="More travellers" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} className="grid h-11 w-11 place-items-center text-muted transition-colors hover:text-ink disabled:opacity-30">
+      <button type="button" aria-label="More travellers" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max} className="grid h-11 w-11 place-items-center rounded-r-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent">
         <Plus size={16} />
       </button>
     </div>
@@ -248,27 +403,24 @@ function Stepper2({ value, onChange, min, max }: { value: number; onChange: (v: 
 function BoardingPass({ form, days, tier }: { form: TripRequest; days: number; tier: string }) {
   const city = form.destination.trim() ? cityName(form.destination) : "Anywhere";
   return (
-    <motion.div layout className="card overflow-hidden">
+    <motion.div layout className="card overflow-hidden rounded-panel" aria-label="Trip summary">
       <div className="night relative px-6 pb-6 pt-5">
         <p className="label mb-3 flex items-center justify-between">
           <span>Boarding pass</span>
-          <span className="mono">WP·{String(days).padStart(2, "0")}</span>
+          <span className="mono">WP·{String(Math.max(days, 0)).padStart(2, "0")}</span>
         </p>
         <AnimatePresence mode="popLayout" initial={false}>
-          <motion.h2 key={city} initial={{ opacity: 0, y: 20, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: [...ease] }} className="display text-[68px]">
+          <motion.h2 key={city} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -18 }} transition={{ duration: 0.36, ease: [...ease] }} className={`display truncate text-[64px] ${city === "Anywhere" ? "text-faint" : ""}`}>
             {city}
           </motion.h2>
         </AnimatePresence>
-        <p className="mono mt-3 text-sm text-muted">{form.start_date && form.end_date ? dateRange(form.start_date, form.end_date) : "Choose dates"}</p>
+        <p className="mono mt-3 text-sm text-muted">{form.start_date && form.end_date && form.end_date >= form.start_date ? dateRange(form.start_date, form.end_date) : "Choose dates"}</p>
       </div>
-      <div className="relative border-t border-dashed border-line">
-        <span className="absolute -left-2.5 -top-2.5 h-5 w-5 rounded-full border border-line bg-bg" />
-        <span className="absolute -right-2.5 -top-2.5 h-5 w-5 rounded-full border border-line bg-bg" />
-      </div>
+      <Perforation />
       <dl className="grid grid-cols-2 gap-x-4 gap-y-4 p-6 text-sm">
         <div>
           <dt className="label mb-1">Days</dt>
-          <dd className="mono text-lg font-semibold">{days}</dd>
+          <dd className="mono text-lg font-semibold">{Math.max(days, 0)}</dd>
         </div>
         <div>
           <dt className="label mb-1">Travellers</dt>
@@ -320,7 +472,7 @@ const DEFAULT_LABEL: Record<string, string> = {
   repair_llm: "Asking the model to fix the issues", fix: "Repairing remaining issues",
 };
 
-function RunScreen({ form, onBack, onDone }: { form: TripRequest; onBack: () => void; onDone: (id: string) => void }) {
+function RunScreen({ form, onBack, onRetry, onDone }: { form: TripRequest; onBack: () => void; onRetry: () => void; onDone: (id: string) => void }) {
   const reduce = useReducedMotion();
   const [stages, setStages] = useState<Record<string, StageEvent>>({});
   const [order, setOrder] = useState<string[]>(ORDER);
@@ -391,19 +543,34 @@ function RunScreen({ form, onBack, onDone }: { form: TripRequest; onBack: () => 
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-full">
       <div className="mx-auto grid max-w-[1200px] items-center gap-12 px-4 py-14 sm:px-6 lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
         <div>
-          <p className="label mb-3">{error ? "Something stopped the plan" : ready ? "Ready" : "Building your itinerary"}</p>
-          <h1 className="display mb-3 text-[clamp(48px,6vw,84px)]">{cityName(form.destination)}</h1>
+          <p className="label mb-3" aria-live="polite">
+            {error ? "Something stopped the plan" : ready ? "Ready" : "Building your itinerary"}
+          </p>
+          <h1 className="display mb-3 text-title">{cityName(form.destination)}</h1>
           <p className="mono mb-10 text-sm text-muted">
             {dateRange(form.start_date, form.end_date)} · {inr(form.budget_inr)} · {form.travelers} traveller{form.travelers > 1 ? "s" : ""}
           </p>
 
           {error ? (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card max-w-lg p-6">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} role="alert" className="card max-w-lg rounded-panel p-6">
               <p className="display-wide mb-2 text-2xl">{error.code === "destination_unsupported_in_demo" ? "That destination needs live data" : "We could not finish the plan"}</p>
               <p className="mb-5 text-muted">{error.message}</p>
-              <Button onClick={onBack} icon={<ArrowLeft size={16} />}>
-                Edit my request
-              </Button>
+              <div className="flex flex-wrap gap-2.5">
+                {error.code === "destination_unsupported_in_demo" ? (
+                  <Button onClick={onBack} icon={<ArrowLeft size={16} />}>
+                    Choose another city
+                  </Button>
+                ) : (
+                  <>
+                    <Button onClick={onRetry} icon={<RotateCw size={16} />}>
+                      Try again
+                    </Button>
+                    <Button variant="ghost" onClick={onBack} icon={<ArrowLeft size={16} />}>
+                      Edit my request
+                    </Button>
+                  </>
+                )}
+              </div>
             </motion.div>
           ) : (
             <ol className="relative m-0 flex max-w-lg flex-col gap-1 p-0">
@@ -445,7 +612,7 @@ function RunScreen({ form, onBack, onDone }: { form: TripRequest; onBack: () => 
           )}
         </div>
 
-        <div className="night relative mx-auto aspect-square w-full max-w-[520px] overflow-hidden rounded-[32px] border border-line shadow-[var(--shadow-lg)]">
+        <div className="night relative mx-auto aspect-square w-full max-w-[520px] overflow-hidden rounded-[32px] border border-line shadow-pop">
           <svg viewBox="-110 -110 220 220" className="h-full w-full" aria-hidden>
             {[30, 58, 86, 104].map((r) => (
               <circle key={r} r={r} fill="none" stroke="var(--sea)" strokeOpacity={0.22} strokeDasharray={r % 2 ? "2 4" : undefined} />
@@ -475,7 +642,7 @@ function RunScreen({ form, onBack, onDone }: { form: TripRequest; onBack: () => 
           </svg>
           <AnimatePresence>
             {ready && (
-              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="absolute inset-0 grid place-items-center bg-[color-mix(in_srgb,var(--bg)_78%,transparent)] backdrop-blur-sm">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }} className="absolute inset-0 grid place-items-center bg-[color-mix(in_srgb,var(--bg)_80%,transparent)] backdrop-blur-[3px]">
                 <div className="text-center">
                   <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ ...spring, delay: 0.1 }} className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full bg-sea text-sea-ink">
                     <Check size={30} strokeWidth={3} />

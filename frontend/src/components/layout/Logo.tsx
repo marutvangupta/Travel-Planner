@@ -10,6 +10,7 @@ export function LogoMark({ size = 28 }: { size?: number }) {
       aria-hidden
       whileHover={{ rotate: 18 }}
       transition={{ type: "spring", stiffness: 260, damping: 14 }}
+      className="shrink-0"
     >
       <rect width="32" height="32" rx="9" fill="var(--sea)" />
       <circle cx="16" cy="16" r="9.5" stroke="var(--sea-ink)" strokeWidth="1.5" opacity=".9" />
@@ -19,11 +20,11 @@ export function LogoMark({ size = 28 }: { size?: number }) {
   );
 }
 
-export function Logo({ className = "" }: { className?: string }) {
+export function Logo({ className = "", size = 28 }: { className?: string; size?: number }) {
   return (
     <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <LogoMark />
-      <span className="display text-[26px] leading-none">Waypoint</span>
+      <LogoMark size={size} />
+      <span className="display text-[25px] leading-none tracking-[-0.01em]">Waypoint</span>
     </span>
   );
 }

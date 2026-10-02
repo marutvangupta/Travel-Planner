@@ -23,22 +23,27 @@ function blob(cx: number, cy: number, r: number, seed: number): string {
   return d + " Z";
 }
 
+/*
+  Composition: the copy sits on the left two-thirds of the panel, so the route arcs across the top (Paris → Tokyo)
+  and drops down the right edge (Jaipur → Goa), framing the headline instead of crossing it. Labels sit on the side of
+  each pin the route does not pass through. Cities are listed in route order so they light up as the line arrives.
+*/
 const CITIES = [
-  { name: "JAIPUR", x: 330, y: 330, label: [14, -10] as const, coord: "26.91°N 75.79°E" },
-  { name: "GOA", x: 300, y: 470, label: [-52, 26] as const, coord: "15.50°N 73.83°E" },
-  { name: "TOKYO", x: 470, y: 260, label: [-26, -18] as const, coord: "35.68°N 139.65°E" },
-  { name: "PARIS", x: 100, y: 190, label: [-8, -16] as const, coord: "48.86°N 2.35°E" },
-];
-const ROUTE = "M100 190 C 170 120, 250 240, 330 330 S 320 430, 300 470 S 430 340, 470 260";
+  { name: "PARIS", x: 140, y: 130, label: [-10, 28] as const, anchor: "start", coord: "48.86°N 2.35°E" },
+  { name: "TOKYO", x: 490, y: 175, label: [-16, 28] as const, anchor: "end", coord: "35.68°N 139.65°E" },
+  { name: "JAIPUR", x: 470, y: 330, label: [16, 18] as const, anchor: "start", coord: "26.91°N 75.79°E" },
+  { name: "GOA", x: 440, y: 500, label: [16, 8] as const, anchor: "start", coord: "15.50°N 73.83°E" },
+] as const;
+const ROUTE = "M140 130 C 250 50, 390 70, 490 175 S 510 280, 470 330 S 410 440, 440 500";
 
 export function HeroChart() {
   const reduce = useReducedMotion();
-  const contours = useMemo(() => [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ d: blob(300, 340, 40 + i * 34, i * 0.9), i })), []);
+  const contours = useMemo(() => [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ d: blob(375, 330, 40 + i * 34, i * 0.9), i })), []);
   const grid = useMemo(() => Array.from({ length: 13 }, (_, i) => i * 50), []);
   return (
-    <svg viewBox="0 0 620 720" className="h-full w-full" role="img" aria-label="Animated route chart connecting Paris, Jaipur, Goa and Tokyo" preserveAspectRatio="xMidYMid slice">
+    <svg viewBox="0 0 620 720" className="h-full w-full" role="img" aria-label="Animated route chart connecting Paris, Jaipur, Goa and Tokyo" preserveAspectRatio="xMaxYMid slice">
       <defs>
-        <radialGradient id="hc-glow" cx="50%" cy="48%" r="60%">
+        <radialGradient id="hc-glow" cx="68%" cy="44%" r="62%">
           <stop offset="0%" stopColor="var(--sea)" stopOpacity="0.18" />
           <stop offset="100%" stopColor="var(--sea)" stopOpacity="0" />
         </radialGradient>
@@ -56,7 +61,7 @@ export function HeroChart() {
           </motion.g>
         ))}
       </g>
-      <g transform="translate(95 -10)">
+      <g>
       <g fill="none" stroke="var(--sea)" strokeLinecap="round">
         {contours.map(({ d, i }) => (
           <motion.path
@@ -94,17 +99,17 @@ export function HeroChart() {
           <motion.circle cx={c.x} cy={c.y} r="6" fill="none" stroke="var(--sea)" initial={false} className={reduce ? "" : "ping"} style={{ transformOrigin: `${c.x}px ${c.y}px`, animationDelay: `${k * 0.6}s` }} />
           <motion.circle cx={c.x} cy={c.y} r="4.5" fill="var(--bg)" stroke="var(--sea)" strokeWidth="2" initial={reduce ? false : { scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 300, damping: 16, delay: 1.2 + k * 0.4 }} style={{ transformOrigin: `${c.x}px ${c.y}px` }} />
           <motion.g initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.5 + k * 0.4, duration: 0.6 }}>
-            <text x={c.x + c.label[0]} y={c.y + c.label[1]} fill="var(--ink)" fontFamily="var(--font-mono)" fontSize="12" fontWeight="600" letterSpacing="1.4">
+            <text x={c.x + c.label[0]} y={c.y + c.label[1]} textAnchor={c.anchor} fill="var(--ink)" fontFamily="var(--font-mono)" fontSize="12" fontWeight="600" letterSpacing="1.4">
               {c.name}
             </text>
-            <text x={c.x + c.label[0]} y={c.y + c.label[1] + 13} fill="var(--faint)" fontFamily="var(--font-mono)" fontSize="9" letterSpacing=".6">
+            <text x={c.x + c.label[0]} y={c.y + c.label[1] + 13} textAnchor={c.anchor} fill="var(--muted)" fontFamily="var(--font-mono)" fontSize="9" letterSpacing=".6">
               {c.coord}
             </text>
           </motion.g>
         </g>
       ))}
       </g>
-      <g transform="translate(560 650)" opacity=".75">
+      <g transform="translate(556 78)" opacity=".7">
         <circle r="26" fill="none" stroke="var(--faint)" strokeWidth="1" />
         <motion.g animate={reduce ? undefined : { rotate: [0, 6, -4, 0] }} transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}>
           <path d="M0 -22 L5 0 L0 22 L-5 0 Z" fill="var(--sea)" opacity=".9" />

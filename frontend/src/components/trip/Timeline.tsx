@@ -110,8 +110,8 @@ function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item
           <p className="label mt-2 !text-[10px]">{SLOT_LABEL[it.slot]}</p>
         </div>
         <div
-          className={`group relative rounded-2xl border bg-surface p-4 transition-[border-color,box-shadow] ${flash ? "glow-once" : ""} ${
-            hot ? "border-sea shadow-[var(--shadow-lg)]" : flag === "added" ? "border-good/60" : flag ? "border-warn/50" : "border-line shadow-[var(--shadow)]"
+          className={`group relative rounded-2xl border bg-surface p-4 transition-[border-color,box-shadow] duration-200 ${flash ? "glow-once" : ""} ${
+            hot ? "border-sea/70 shadow-pop" : flag === "added" ? "border-good/60 shadow-card" : flag ? "border-warn/50 shadow-card" : "border-line shadow-card"
           }`}
         >
           <div className="flex items-start gap-3">
@@ -153,10 +153,10 @@ function StopCard({ it, first, prev, p }: { it: Item; first: boolean; prev: Item
                     <IconBtn label="Not for me" active={fb === "down"} tone="signal" onClick={() => p.onFeedback?.(it, "down")}>
                       <ThumbsDown size={15} />
                     </IconBtn>
-                    <IconBtn label={it.locked ? "Unlock" : "Lock so re-plans leave it alone"} active={it.locked} onClick={() => p.onLock?.(it)}>
+                    <IconBtn label={it.locked ? "Unlock" : "Lock in place"} active={it.locked} onClick={() => p.onLock?.(it)}>
                       <Lock size={15} />
                     </IconBtn>
-                    <IconBtn label="Mark as closed or sold out" tone="signal" onClick={() => p.onClosed?.(it)}>
+                    <IconBtn label="Closed or sold out" tone="signal" onClick={() => p.onClosed?.(it)}>
                       <Ban size={15} />
                     </IconBtn>
                   </div>
@@ -174,12 +174,12 @@ function IconBtn({ children, label, onClick, active, tone = "sea" }: { children:
   return (
     <motion.button
       type="button"
-      title={label}
+      data-tip={label}
       aria-label={label}
       aria-pressed={active}
       whileTap={{ scale: 0.82 }}
       onClick={onClick}
-      className={`grid h-8 w-8 place-items-center rounded-lg transition-colors ${active ? (tone === "signal" ? "bg-signal-soft text-signal" : "bg-sea-soft text-sea") : "text-faint hover:bg-surface-2 hover:text-ink"}`}
+      className={`tip relative grid h-8 w-8 place-items-center rounded-lg transition-colors ${active ? (tone === "signal" ? "bg-signal-soft text-signal" : "bg-sea-soft text-sea") : "text-faint hover:bg-surface-2 hover:text-ink"}`}
     >
       {children}
     </motion.button>

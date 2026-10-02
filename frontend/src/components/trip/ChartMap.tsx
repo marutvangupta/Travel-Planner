@@ -6,7 +6,10 @@ import type { Day, Item } from "../../lib/types";
 
 const W = 640;
 const H = 520;
-const PAD = 70;
+// frame padding; top and bottom leave room for the legend and the scale/day toggle that sit over the chart
+const PAD_X = 64;
+const PAD_TOP = 96;
+const PAD_BOTTOM = 92;
 const DAY_COLORS = ["var(--sea)", "var(--warn)", "var(--rain)", "var(--signal)", "var(--good)", "var(--muted)", "var(--sea)", "var(--warn)", "var(--rain)", "var(--signal)"];
 
 type P = [number, number];
@@ -49,15 +52,20 @@ export function ChartMap({
   const visible = useMemo(() => visibleDays.flatMap((d) => d.items), [visibleDays]);
 
   const view = useMemo(() => {
-    const src = visible.length ? visible.map((i) => proj.toKm(i.lat, i.lng)) : base ? [proj.toKm(base[0], base[1])] : [[0, 0] as P];
+    // frame the stops; take in the base too when that doesn't shrink the stops into a corner. Otherwise the dashed
+    // first leg simply runs off the edge toward it, which still says where the day starts from.
+    const stops = visible.map((i) => proj.toKm(i.lat, i.lng));
+    const span = (ps: P[]) => Math.max(Math.max(...ps.map((p) => p[0])) - Math.min(...ps.map((p) => p[0])), Math.max(...ps.map((p) => p[1])) - Math.min(...ps.map((p) => p[1])), 3.5);
+    const withBase = base ? [...stops, proj.toKm(base[0], base[1])] : stops;
+    const src = !stops.length ? (base ? withBase : [[0, 0] as P]) : span(withBase) <= span(stops) * 1.6 ? withBase : stops;
     const xs = src.map((p) => p[0]);
     const ys = src.map((p) => p[1]);
     const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 3.5);
     const spanY = Math.max(Math.max(...ys) - Math.min(...ys), 3.5);
-    const s = Math.min((W - 2 * PAD) / spanX, (H - 2 * PAD) / spanY);
+    const s = Math.min((W - 2 * PAD_X) / spanX, (H - PAD_TOP - PAD_BOTTOM) / spanY);
     const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
     const cy = (Math.max(...ys) + Math.min(...ys)) / 2;
-    return { s, tx: W / 2 - cx * s, ty: H / 2 - cy * s };
+    return { s, tx: W / 2 - cx * s, ty: PAD_TOP + (H - PAD_TOP - PAD_BOTTOM) / 2 - cy * s };
   }, [visible, proj, base]);
 
   // camera: ease the background layer between focus areas
@@ -142,6 +150,14 @@ export function ChartMap({
               </g>
             );
           })}
+          {base &&
+            visibleDays.map((d) => {
+              const first = d.items[0];
+              if (!first) return null;
+              const [bx, by] = toPx({ lat: base[0], lng: base[1] });
+              const [fx, fy] = toPx(first);
+              return <motion.line key={`leg-${d.index}`} x1={bx} y1={by} x2={fx} y2={fy} stroke="var(--faint)" strokeWidth={1.5} strokeDasharray="2 5" strokeLinecap="round" initial={{ opacity: 0 }} animate={{ opacity: 0.7 }} transition={{ delay: reduce ? 0 : 0.4, duration: 0.5 }} />;
+            })}
           {base && (
             <g transform={`translate(${toPx({ lat: base[0], lng: base[1] }).join(" ")})`} opacity={0.9}>
               <rect x={-6} y={-6} width={12} height={12} transform="rotate(45)" fill="var(--bg)" stroke="var(--faint)" strokeWidth={1.5} />
@@ -179,7 +195,7 @@ export function ChartMap({
 }
 
 function Marker({ it, n, pos, color, hover, flagged, delay, onHover }: { it: Item; n: number; pos: P; color: string; hover: boolean; flagged: boolean; delay: number; onHover: (id: string | null) => void }) {
-  const r = 12;
+  const r = 13;
   return (
     <motion.g
       initial={{ opacity: 0, scale: 0.2 }}
@@ -196,7 +212,7 @@ function Marker({ it, n, pos, color, hover, flagged, delay, onHover }: { it: Ite
       ) : (
         <circle r={r} fill="var(--surface)" stroke={color} strokeWidth={2.2} />
       )}
-      <text textAnchor="middle" dy="0.35em" fontFamily="var(--font-mono)" fontSize={11} fontWeight={600} fill="var(--ink)">
+      <text textAnchor="middle" dy="0.35em" fontFamily="var(--font-mono)" fontSize={12} fontWeight={600} fill="var(--ink)">
         {n}
       </text>
       {hover && (

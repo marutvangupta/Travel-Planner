@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { prefersReducedMotion } from "./a11y";
 
 export type ThemeChoice = "system" | "light" | "dark";
 const KEY = "wp-theme";
@@ -12,12 +13,16 @@ function read(): ThemeChoice {
   }
 }
 
+function apply(choice: ThemeChoice) {
+  const root = document.documentElement;
+  if (choice === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", choice);
+}
+
 export function useTheme() {
   const [choice, setChoice] = useState<ThemeChoice>(read);
   useEffect(() => {
-    const root = document.documentElement;
-    if (choice === "system") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", choice);
+    apply(choice);
     try {
       if (choice === "system") localStorage.removeItem(KEY);
       else localStorage.setItem(KEY, choice);
@@ -25,6 +30,13 @@ export function useTheme() {
       /* ignore */
     }
   }, [choice]);
-  const cycle = useCallback(() => setChoice((c) => (c === "system" ? "light" : c === "light" ? "dark" : "system")), []);
+  const cycle = useCallback(() => {
+    const next: ThemeChoice = choice === "system" ? "light" : choice === "light" ? "dark" : "system";
+    // cross-fade the whole page where the browser supports view transitions; a hard cut otherwise
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (doc.startViewTransition && !prefersReducedMotion()) doc.startViewTransition(() => apply(next));
+    else apply(next);
+    setChoice(next);
+  }, [choice]);
   return { choice, cycle };
 }

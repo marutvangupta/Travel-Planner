@@ -1,15 +1,16 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Ban, CloudRain, Eye, FlaskConical, History, Layers, MessageSquare, Zap, X, Check, Cpu } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Ban, Check, ChevronDown, CloudRain, Cpu, Eye, FlaskConical, History, Layers, MapPinOff, MessageSquare, RotateCw, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChartMap } from "../components/trip/ChartMap";
 import { DayTabs } from "../components/trip/DayTabs";
 import { ChatPanel, HistoryPanel, ProposalCard, WhatIfPanel } from "../components/trip/Panels";
 import { BudgetMeter } from "../components/trip/parts";
 import { Timeline } from "../components/trip/Timeline";
 import { Button } from "../components/ui";
+import { rovingKeys, useDocumentTitle } from "../lib/a11y";
 import { useToast } from "../context/ToastContext";
-import { api } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { cityName, dateRange, duration, inr, titleCase } from "../lib/format";
 import { ease, pageVariants, spring } from "../lib/motion";
 import type { Item, ItemChange, Itinerary, Proposal, ProposalSummary, TripDetail, VersionRow } from "../lib/types";
@@ -23,9 +24,12 @@ const PANELS: { key: PanelKey; label: string; icon: typeof MessageSquare }[] = [
 
 export default function TripPage() {
   const { id = "" } = useParams();
+  const nav = useNavigate();
   const toast = useToast();
   const [detail, setDetail] = useState<TripDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ status: number; message: string } | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [dayIndex, setDayIndex] = useState(0);
   const [mapAll, setMapAll] = useState(false);
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -43,7 +47,7 @@ export default function TripPage() {
       setDetail(d);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load this trip.");
+      setError({ status: e instanceof ApiError ? e.status : 0, message: e instanceof Error ? e.message : "Could not load this trip." });
     }
   }, [id]);
 
@@ -64,6 +68,7 @@ export default function TripPage() {
     if (panel === "history") void loadVersions();
   }, [panel, loadVersions, detail?.version?.id]);
 
+  useDocumentTitle(detail ? cityName(detail.trip.destination) : "Trip");
   const base = detail?.itinerary ?? null;
   const shown: Itinerary | null = preview?.itinerary ?? base;
 
@@ -78,6 +83,7 @@ export default function TripPage() {
     return m;
   }, [preview, shown]);
   const removed: ItemChange[] = useMemo(() => preview?.diff.changes.filter((c) => c.kind === "removed") ?? [], [preview]);
+  const highlight = useMemo(() => new Set(flags.keys()), [flags]);
   const changedDays = useMemo(() => {
     const s = new Set<number>();
     if (!preview || !shown) return s;
@@ -167,16 +173,40 @@ export default function TripPage() {
     }
   };
 
-  if (error)
+  if (error) {
+    const missing = error.status === 404;
     return (
-      <div className="mx-auto max-w-xl px-5 py-24">
-        <p className="display-wide mb-3 text-3xl">We could not open this trip</p>
-        <p className="mb-6 text-muted">{error}</p>
-        <Link to="/trips" className="font-semibold text-sea">
-          Back to trips
-        </Link>
-      </div>
+      <motion.div variants={pageVariants} initial="initial" animate="animate" className="mx-auto max-w-xl px-4 py-20 sm:py-28">
+        <div className="card flex flex-col items-start gap-4 rounded-panel p-7" role="alert">
+          <span className="grid h-11 w-11 place-items-center rounded-[12px] bg-surface-2 text-muted">
+            <MapPinOff size={20} />
+          </span>
+          <div>
+            <p className="display-wide text-[26px]">{missing ? "This trip isn't here anymore" : "We couldn't open this trip"}</p>
+            <p className="mt-1.5 text-muted">{missing ? "It may have been deleted, or the link is from another account." : error.message}</p>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            {!missing && (
+              <Button
+                onClick={async () => {
+                  setRetrying(true);
+                  await load();
+                  setRetrying(false);
+                }}
+                loading={retrying}
+                icon={<RotateCw size={15} />}
+              >
+                Try again
+              </Button>
+            )}
+            <Button variant={missing ? "primary" : "ghost"} icon={<ArrowLeft size={15} />} onClick={() => nav("/trips")}>
+              All trips
+            </Button>
+          </div>
+        </div>
+      </motion.div>
     );
+  }
   if (!detail || !shown || !base) return <TripSkeleton />;
 
   const { trip } = detail;
@@ -188,8 +218,8 @@ export default function TripPage() {
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-full">
       <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6">
-        <Link to="/trips" className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-ink">
-          <ArrowLeft size={15} /> All trips
+        <Link to="/trips" className="group mb-4 inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-muted transition-colors hover:text-ink">
+          <ArrowLeft size={15} className="transition-transform duration-200 group-hover:-translate-x-0.5" /> All trips
         </Link>
 
         <motion.header initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, ease: [...ease] }} className="mb-6 grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]">
@@ -203,7 +233,7 @@ export default function TripPage() {
               <span className="text-faint">·</span>
               <span>{titleCase(req.pace)} pace</span>
             </p>
-            <h1 className="display text-[clamp(52px,8vw,104px)]">{cityName(trip.destination)}</h1>
+            <h1 className="display text-[clamp(52px,7vw,92px)]">{cityName(trip.destination)}</h1>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Badge icon={<Layers size={12} />}>v{detail.version?.version_no ?? 1}</Badge>
               <Badge icon={<Cpu size={12} />}>{base.planner === "llm" ? "Planned by language model" : "Built-in planner"}</Badge>
@@ -220,22 +250,22 @@ export default function TripPage() {
               )}
             </div>
           </div>
-          <div className="card p-5">
+          <div className="card rounded-panel p-5">
             <BudgetMeter totals={shown.totals} />
             <p className="mono mt-3 text-xs text-muted">{duration(shown.totals.travel_minutes)} of local travel across {shown.totals.items} stops</p>
           </div>
         </motion.header>
 
         {(base.warnings.length > 0 || base.assumptions.length > 0) && !preview && (
-          <details className="group mb-5 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium">
+          <details className="group mb-5 rounded-[14px] border border-line bg-surface text-sm shadow-xs transition-colors hover:border-line-strong">
+            <summary className="flex list-none items-center justify-between gap-3 rounded-[14px] px-4 py-3 font-medium [&::-webkit-details-marker]:hidden">
               <span className="flex items-center gap-2">
                 {base.warnings.length > 0 && <span className="rounded-md bg-warn-soft px-1.5 py-0.5 text-[11px] font-semibold text-warn">{base.warnings.length} note{base.warnings.length > 1 ? "s" : ""}</span>}
                 Assumptions and notes
               </span>
-              <span className="text-xs text-faint group-open:hidden">Show</span>
+              <ChevronDown size={16} className="text-faint transition-transform duration-200 group-open:rotate-180" aria-hidden />
             </summary>
-            <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-[13px] text-muted">
+            <ul className="mb-3 flex list-disc flex-col gap-1 pl-9 pr-4 text-[13px] text-muted">
               {[...base.warnings, ...base.assumptions].map((a) => (
                 <li key={a}>{a}</li>
               ))}
@@ -274,7 +304,7 @@ export default function TripPage() {
                       <p className="truncate text-sm font-medium">{preview.diff.summary}</p>
                     </div>
                     <Button size="sm" variant="signal" onClick={() => accept(preview)} loading={busyId === preview.version_id} icon={<Check size={14} />}>
-                      Apply
+                      Apply change
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setPreview(null)} icon={<X size={14} />}>
                       Back to current
@@ -314,35 +344,40 @@ export default function TripPage() {
           <aside className="flex flex-col gap-4 lg:sticky lg:top-[5rem] lg:h-[calc(100vh-6.5rem)] lg:min-h-[640px]">
             <div className="card relative overflow-hidden">
               <div className="aspect-[640/520] max-h-[330px] w-full">
-                <ChartMap days={shown.days} active={mapAll ? "all" : day} base={shown.base} hoverId={hoverId} onHover={setHoverId} highlight={new Set(flags.keys())} />
+                <ChartMap days={shown.days} active={mapAll ? "all" : day} base={shown.base} hoverId={hoverId} onHover={setHoverId} highlight={highlight} />
               </div>
-              <div className="absolute left-3 top-3 flex items-center gap-2 rounded-lg border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] backdrop-blur">
-                <span className="inline-block h-3 w-3 rounded-full border-2 border-sea" /> outdoor
-                <span className="ml-1 inline-block h-3 w-3 rounded-[3px] border-2 border-sea" /> indoor
+              <div className="absolute left-3 top-3 flex items-center gap-2 rounded-lg border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] text-muted shadow-xs backdrop-blur" aria-hidden>
+                <span className="inline-block h-3 w-3 rounded-full border-2 border-sea" /> Outdoor
+                <span className="ml-1 inline-block h-3 w-3 rounded-[3px] border-2 border-sea" /> Indoor
               </div>
-              <button type="button" onClick={() => setMapAll((v) => !v)} aria-pressed={mapAll} className={`absolute bottom-3 right-3 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${mapAll ? "border-sea bg-sea-soft text-sea" : "border-line bg-surface/90 text-muted hover:text-ink"}`}>
-                {mapAll ? "All days" : `Day ${day + 1}`}
-              </button>
+              <div role="radiogroup" aria-label="Map shows" className="absolute bottom-3 right-3 flex rounded-lg border border-line bg-surface/90 p-0.5 text-[11px] font-semibold shadow-xs backdrop-blur">
+                {[false, true].map((all) => (
+                  <button key={String(all)} type="button" role="radio" aria-checked={mapAll === all} onClick={() => setMapAll(all)} className={`relative rounded-[6px] px-2.5 py-1 transition-colors ${mapAll === all ? "text-sea" : "text-muted hover:text-ink"}`}>
+                    {mapAll === all && <motion.span layoutId="map-scope" transition={spring} className="absolute inset-0 rounded-[6px] bg-sea-soft" />}
+                    <span className="relative">{all ? "All days" : `Day ${day + 1}`}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="card flex min-h-[420px] flex-1 flex-col overflow-hidden lg:min-h-0">
-              <div role="tablist" className="flex border-b border-line p-1.5">
+            <div ref={panelRef} id="assistant" className="card flex min-h-[520px] flex-1 scroll-mt-24 flex-col overflow-hidden lg:min-h-0">
+              <div role="tablist" aria-label="Assistant" onKeyDown={(e: KeyboardEvent<HTMLDivElement>) => rovingKeys(e, PANELS.map((p) => p.key), panel, setPanel)} className="flex border-b border-line p-1.5">
                 {PANELS.map(({ key, label, icon: Icon }) => (
-                  <button key={key} role="tab" aria-selected={panel === key} type="button" onClick={() => setPanel(key)} className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-colors ${panel === key ? "text-ink" : "text-muted hover:text-ink"}`}>
-                    {panel === key && <motion.span layoutId="panel-tab" transition={spring} className="absolute inset-0 rounded-lg bg-surface-2" />}
+                  <button key={key} id={`panel-tab-${key}`} role="tab" aria-selected={panel === key} aria-controls="panel-body" tabIndex={panel === key ? 0 : -1} type="button" onClick={() => setPanel(key)} className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-[9px] py-2 text-sm font-semibold transition-colors ${panel === key ? "text-ink" : "text-muted hover:text-ink"}`}>
+                    {panel === key && <motion.span layoutId="panel-tab" transition={spring} className="absolute inset-0 rounded-[9px] bg-surface-2" />}
                     <Icon size={15} className="relative" />
                     <span className="relative">{label}</span>
                   </button>
                 ))}
               </div>
-              <div className="min-h-0 flex-1">
+              <div id="panel-body" role="tabpanel" aria-labelledby={`panel-tab-${panel}`} className="min-h-0 flex-1">
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div key={panel} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2 }} className="h-full">
                     {panel === "chat" && (
-                      <ChatPanel tripId={id} messages={detail.messages} itinerary={base} previewId={preview?.version_id ?? null} onPreview={showPreview} onAccept={accept} onReject={reject} onAfterSend={load} busyId={busyId} />
+                      <ChatPanel tripId={id} messages={detail.messages} itinerary={base} previewId={preview?.version_id ?? null} appliedId={detail.version?.id ?? null} onPreview={showPreview} onAccept={accept} onReject={reject} onAfterSend={load} busyId={busyId} />
                     )}
                     {panel === "whatif" && (
-                      <WhatIfPanel tripId={id} budget={trip.budget_inr} previewId={preview?.version_id ?? null} onPreview={showPreview} onAccept={accept} busyId={busyId} onAfterRun={load} />
+                      <WhatIfPanel tripId={id} budget={trip.budget_inr} previewId={preview?.version_id ?? null} appliedId={detail.version?.id ?? null} onPreview={showPreview} onAccept={accept} busyId={busyId} onAfterRun={load} />
                     )}
                     {panel === "history" && <HistoryPanel versions={versions} />}
                   </motion.div>
@@ -352,6 +387,8 @@ export default function TripPage() {
           </aside>
         </div>
       </div>
+      {/* phones: the assistant sits below the whole timeline, so keep a way to it under the thumb */}
+      <AssistantShortcut target={panelRef} onOpen={() => setPanel("chat")} />
       <p className="sr-only" aria-live="polite">
         {preview ? "Previewing a proposed change" : ""} {inr(shown.totals.cost_inr)}
       </p>
@@ -377,21 +414,30 @@ function SimulateMenu({ days, items, onRain, onClose, disabled }: { days: number
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const k = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      ref.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    };
     document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
+    document.addEventListener("keydown", k);
+    return () => {
+      document.removeEventListener("mousedown", h);
+      document.removeEventListener("keydown", k);
+    };
   }, [open]);
   return (
     <div ref={ref} className="relative shrink-0">
-      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => setOpen((o) => !o)} aria-expanded={open} icon={<CloudRain size={14} />}>
+      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="true" icon={<CloudRain size={14} />} iconRight={<ChevronDown size={13} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />}>
         Simulate
       </Button>
       <AnimatePresence>
         {open && (
-          <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4, scale: 0.98 }} transition={spring} className="absolute right-0 z-40 mt-2 w-64 rounded-xl border border-line bg-surface p-2 shadow-[var(--shadow-lg)]">
+          <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4, scale: 0.98 }} transition={spring} style={{ transformOrigin: "top right" }} className="absolute right-0 z-40 mt-2 w-64 rounded-[14px] border border-line bg-surface p-2 shadow-pop">
             <p className="label px-2 pb-1 pt-1.5">Heavy rain on</p>
             <div className="flex flex-wrap gap-1 px-1 pb-2">
               {Array.from({ length: days }, (_, d) => (
-                <button key={d} type="button" onClick={() => { setOpen(false); onRain(d); }} className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:border-rain hover:text-rain">
+                <button key={d} type="button" onClick={() => { setOpen(false); onRain(d); }} className="rounded-lg border border-line px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:border-rain hover:bg-rain-soft hover:text-rain">
                   Day {d + 1}
                 </button>
               ))}
@@ -414,20 +460,75 @@ function SimulateMenu({ days, items, onRain, onClose, disabled }: { days: number
   );
 }
 
+function AssistantShortcut({ target, onOpen }: { target: React.RefObject<HTMLDivElement | null>; onOpen: () => void }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = target.current;
+    if (!el || !("IntersectionObserver" in window)) return;
+    // show only while the panel is off screen
+    const io = new IntersectionObserver(([e]) => setVisible(!e.isIntersecting), { threshold: 0.05 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [target]);
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 16, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.96 }}
+          transition={spring}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => {
+            onOpen();
+            target.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            window.setTimeout(() => target.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true }), 450);
+          }}
+          className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-4 z-30 inline-flex h-12 items-center gap-2 rounded-full bg-ink pl-4 pr-5 text-sm font-semibold text-bg shadow-pop lg:hidden"
+        >
+          <MessageSquare size={17} /> Ask or change
+        </motion.button>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function TripSkeleton() {
   return (
-    <div className="mx-auto max-w-[1500px] px-4 py-10 sm:px-6">
-      <div className="skeleton mb-3 h-4 w-48" />
-      <div className="skeleton mb-8 h-24 w-2/3 max-w-xl" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_440px]">
+    <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-6 sm:px-6" aria-busy="true" aria-label="Loading trip">
+      <div className="skeleton mb-6 h-4 w-20" />
+      <div className="grid items-end gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]">
+        <div>
+          <div className="skeleton mb-3 h-3 w-64" />
+          <div className="skeleton h-20 w-72 max-w-full" />
+          <div className="mt-4 flex gap-2">
+            {[56, 120, 84].map((w) => (
+              <div key={w} className="skeleton h-6 rounded-full" style={{ width: w }} />
+            ))}
+          </div>
+        </div>
+        <div className="skeleton h-[132px] rounded-panel" />
+      </div>
+      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_440px]">
         <div className="flex flex-col gap-4">
-          <div className="skeleton h-14" />
-          <div className="skeleton h-32" />
+          <div className="flex gap-1.5">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="skeleton h-[58px] w-24 rounded-xl" />
+            ))}
+          </div>
+          <div className="skeleton h-28 rounded-2xl" />
           {[0, 1, 2].map((i) => (
-            <div key={i} className="skeleton h-28" />
+            <div key={i} className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-3" style={{ opacity: 1 - i * 0.25 }}>
+              <div className="skeleton ml-auto mt-4 h-4 w-12" />
+              <div className="skeleton h-32 rounded-2xl" />
+            </div>
           ))}
         </div>
-        <div className="skeleton h-[560px]" />
+        <div className="hidden flex-col gap-4 lg:flex">
+          <div className="skeleton h-[330px] rounded-card" />
+          <div className="skeleton h-[300px] rounded-card" />
+        </div>
       </div>
     </div>
   );
