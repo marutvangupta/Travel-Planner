@@ -23,7 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1", "pgvector>=0.3"]
-langfuse = ["langfuse>=2.36"]
+langfuse = ["langfuse>=3", "langchain>=0.3"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [build-system]

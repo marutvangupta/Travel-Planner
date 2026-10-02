@@ -112,7 +112,7 @@ def parse_message(message: str, itin: Itinerary, budget_inr: int, pace: str) -> 
     m = re.match(r"^(what if|what would happen if|what happens if|suppose|how would (it|things) change if|"
                  r"what about if|and if|how about if)\b[\s,:-]*(.*)$", low)
     if m:
-        inner = parse_message(m.group(3) or low, itin, budget_inr, pace)
+        inner = parse_message((m.group(3) or low).strip().rstrip("?.! "), itin, budget_inr, pace)
         if inner.request.changes:
             return RouterResult("whatif", inner.request)
         return RouterResult("chitchat", message="I could not turn that scenario into a change I can test. "
@@ -135,7 +135,7 @@ def parse_message(message: str, itin: Itinerary, budget_inr: int, pace: str) -> 
         return RouterResult("constraint_change" if "?" not in low else "whatif", ChangeRequest(changes=changes))
 
     # ------------------------------------------------------------------ weather / closures
-    if re.search(r"\b(rain|raining|rainy|storm|monsoon|wet)\b", low) and not re.search(r"\b(ask|question)\b", low):
+    if re.search(r"\b(rain|rains|raining|rainy|storm|storms|monsoon|wet)\b", low) and not re.search(r"\b(ask|question)\b", low):
         return RouterResult("edit", ChangeRequest(changes=[Change(kind="weather", day=day)]))
     if re.search(r"\b(closed|shut|sold out|unavailable|fully booked|cancelled|canceled)\b", low):
         name = _item_name_in(text, itin) or _category_item(low, itin, day)

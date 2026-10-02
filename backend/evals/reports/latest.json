@@ -1,0 +1,131 @@
+{
+  "suite": "full",
+  "planner": "built-in (deterministic)",
+  "data": "bundled demo dataset",
+  "embedder": "hash-1536",
+  "python": "3.11.15",
+  "trips": 24,
+  "create": {
+    "cases": 24,
+    "hard_violation_rate": 0.0,
+    "valid_first_try": 1.0,
+    "within_budget": 1.0,
+    "budget_used_mean": 0.6938044428574482,
+    "citation_coverage_mean": 1.0,
+    "stops_per_day_mean": 4.489583333333333,
+    "light_day_cases": 5,
+    "warnings_mean": 0.625,
+    "latency_ms_p50": 19,
+    "latency_ms_p95": 59,
+    "tokens_mean": 0.0,
+    "cost_usd_mean": 0.0,
+    "tool_calls_mean": 9.166666666666666,
+    "tool_success_rate": 1.0,
+    "cache_hit_rate": 0.5636363636363636,
+    "repair_loops_mean": 0.0,
+    "node_ms_p50": {
+      "intake": 0,
+      "research": 10,
+      "plan": 4,
+      "validate": 0,
+      "ground": 0
+    },
+    "worst_cases": [
+      {
+        "case": "tokyo/slow-nature",
+        "hard_violations": 0,
+        "valid_first_try": true,
+        "warnings": 2,
+        "within_budget": true,
+        "budget_used": 0.3447368421052632,
+        "citation_coverage": 1.0,
+        "stops_per_day": 2.5,
+        "light_days": 2,
+        "latency_ms": 17,
+        "tokens": 0,
+        "cost_usd": 0.0,
+        "tool_calls": 9,
+        "tool_errors": 0,
+        "cache_hits": 5,
+        "repair_loops": 0
+      },
+      {
+        "case": "goa/slow-nature",
+        "hard_violations": 0,
+        "valid_first_try": true,
+        "warnings": 2,
+        "within_budget": true,
+        "budget_used": 0.7970334928229665,
+        "citation_coverage": 1.0,
+        "stops_per_day": 3.0,
+        "light_days": 1,
+        "latency_ms": 22,
+        "tokens": 0,
+        "cost_usd": 0.0,
+        "tool_calls": 9,
+        "tool_errors": 0,
+        "cache_hits": 5,
+        "repair_loops": 0
+      },
+      {
+        "case": "goa/vegan-adventure",
+        "hard_violations": 0,
+        "valid_first_try": true,
+        "warnings": 3,
+        "within_budget": true,
+        "budget_used": 0.4431588613406795,
+        "citation_coverage": 1.0,
+        "stops_per_day": 3.0,
+        "light_days": 1,
+        "latency_ms": 18,
+        "tokens": 0,
+        "cost_usd": 0.0,
+        "tool_calls": 9,
+        "tool_errors": 0,
+        "cache_hits": 7,
+        "repair_loops": 0
+      }
+    ]
+  },
+  "changes": {
+    "cases": 96,
+    "router_accuracy": 1.0,
+    "hard_violation_rate": 0.0,
+    "affected_precision": 1.0,
+    "affected_recall": 1.0,
+    "stability_mean": 0.9643229166666667,
+    "stability_p10": 0.857,
+    "rain_no_outdoor_in_rain": 0.5,
+    "rain_resolved_share": 0.6458333333333334,
+    "unresolved_rain_cases": 8,
+    "closure_target_removed": 1.0,
+    "budget_target_met": 1.0,
+    "avoid_respected": 1.0,
+    "pace_respected": 1.0,
+    "late_start_respected": 1.0,
+    "latency_ms_p50": 6,
+    "latency_ms_p95": 11,
+    "failures": []
+  },
+  "retrieval": {
+    "queries": 24,
+    "modes": {
+      "keyword": {
+        "recall@1": 0.9583333333333334,
+        "recall@3": 0.9583333333333334,
+        "mrr": 0.9666666666666667
+      },
+      "vector": {
+        "recall@1": 0.875,
+        "recall@3": 0.9583333333333334,
+        "mrr": 0.9131944444444445
+      },
+      "hybrid": {
+        "recall@1": 0.875,
+        "recall@3": 0.9583333333333334,
+        "mrr": 0.9270833333333334
+      }
+    }
+  },
+  "duration_s": 2.56
+}

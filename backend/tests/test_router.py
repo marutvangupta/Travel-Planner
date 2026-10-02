@@ -39,3 +39,18 @@ async def test_answer_question_uses_itinerary(ctx):
 def test_text_rules():
     req = apply_text_rules(make_request(constraints_text="We are vegan, no early mornings, wheelchair user, skip museums"))
     assert req.diet == "vegan" and req.late_starts and req.step_free and "museum" in req.avoid
+
+
+PRESET_TEXTS = [
+    "What if I reduce my budget by ₹10,000?", "What if I reduce my budget by ₹25,000?", "What if I increase my budget by ₹20,000?",
+    "What if I take it slower?", "What if it rains on day 2?", "What if I start later each day?", "What if I skip nightlife?",
+]
+
+
+@pytest.mark.parametrize("text", PRESET_TEXTS)
+async def test_every_ui_preset_parses_as_a_whatif(ctx, text):
+    from travel_planner.agent.router import parse_message as parse
+    from travel_planner.services.planner import plan_heuristic as plan
+
+    r = parse(text, plan(ctx), 40000, "balanced")
+    assert r.intent == "whatif" and r.request.changes, text

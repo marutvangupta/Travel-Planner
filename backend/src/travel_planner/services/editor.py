@@ -125,7 +125,13 @@ def analyze_impact(ctx: PlanContext, itin: Itinerary, cr: ChangeRequest) -> Impa
             new = max(int(new or 0), 1)
             ctx.budget = new
             plan.request_patch["budget_inr"] = new
-            plan.actions.append(Action("reduce_budget", target=new, reason=f"Budget is now ₹{new:,}"))
+            if new < current:
+                plan.actions.append(Action("reduce_budget", target=new, reason=f"Budget is now ₹{new:,}"))
+                plan.notes.append(f"__budget_check__:{new}")  # replaced with a plain-language note once totals are known
+            else:
+                # a bigger budget buys more: add the best-fitting extra stops
+                for _ in range(2):
+                    plan.actions.append(Action("add", reason=f"Budget is now ₹{new:,}, which leaves room for more"))
         elif k == "pace":
             plan.request_patch["pace"] = ch.pace
             plan.actions.append(Action("pace", pace=ch.pace, reason=f"Pace changed to {ch.pace}"))
@@ -485,6 +491,18 @@ class Editor:
                 if loc:
                     loc[1].locked = True
         self.itin = rebuild(self.ctx, self.base, self.entries)
+        total = self.itin.totals.cost_inr
+        resolved: list[str] = []
+        for n in plan.notes:
+            if n.startswith("__budget_check__:"):
+                target = int(n.split(":", 1)[1])
+                if self.base.totals.cost_inr <= target:
+                    resolved.append(f"The plan costs ₹{self.base.totals.cost_inr:,}, which already fits within ₹{target:,}, so nothing needs to change.")
+                elif total > target:
+                    resolved.append(f"Closest feasible plan costs ₹{total:,}; ₹{total - target:,} above the new budget.")
+            else:
+                resolved.append(n)
+        plan.notes[:] = resolved
         return self.itin
 
 

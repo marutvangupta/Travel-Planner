@@ -133,8 +133,10 @@ def plan_heuristic(ctx: PlanContext) -> Itinerary:
                 # pass 0 respects the daily cap; pass 1 (meals only) takes the cheapest feasible option
                 order_p = [p for _, p in ranked] if pass_no == 0 else sorted(
                     (p for _, p in ranked), key=lambda q: ctx.item_cost(q))
+                last = entries[-1].place_id if entries else None
                 for p in order_p:
-                    cost = ctx.item_cost(p)
+                    # budget accounting includes the taxi/transit hop from the previous stop, not just the ticket
+                    cost = ctx.item_cost(p) + ctx.leg_cost(ctx.leg(last, p.place_id))
                     if spent + cost + reserve > ctx.budget * 0.9:
                         continue
                     if pass_no == 0 and day_spent + cost + remaining_meals * min_meal > per_day * 1.1:

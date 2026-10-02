@@ -1,0 +1,68 @@
+# One command: docker compose up --build   ->  http://localhost:8080
+# Works with no keys (demo data, built-in planner). Put keys in .env to switch to live data and the LLM planner.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: tp
+      POSTGRES_PASSWORD: tp
+      POSTGRES_DB: tp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tp -d tp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  mcp:
+    build: ./backend
+    command: ["python", "-m", "travel_planner.mcp_server"]
+    env_file:
+      - path: .env
+        required: false
+    environment: &shared
+      DATABASE_URL: postgresql+psycopg://tp:tp@db:5432/tp
+      REDIS_URL: redis://redis:6379/0
+      MCP_PORT: "8001"
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8001:8001"   # also usable from an MCP client such as an inspector or a desktop app
+
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *shared
+      TOOLS_MODE: mcp                      # the agent calls its tools through the MCP server
+      MCP_SERVER_URL: http://mcp:8001/mcp
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-any-real-deployment-0123456789}
+      CORS_ORIGINS: '["http://localhost:8080"]'
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mcp: { condition: service_started }
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:

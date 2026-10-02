@@ -6,7 +6,7 @@ import pytest
 
 _tmp = tempfile.mkdtemp(prefix="tp-tests-")
 os.environ["FORCE_DEMO"] = "true"
-os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db"
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or f"sqlite:///{_tmp}/test.db"
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("GOOGLE_MAPS_API_KEY", None)
 

@@ -1,0 +1,327 @@
+@import "tailwindcss";
+
+/*
+  Waypoint design tokens.
+  Concept: a navigator's chart table. Cool paper by day, night chart in the dark; teal for route and action,
+  a single signal orange reserved for change (alerts, diffs, re-plans). Type: condensed signage display,
+  humanist body, mono for anything that lines up (times, costs, coordinates).
+*/
+:root {
+  --bg: #e7ecea;
+  --surface: #f5f8f6;
+  --surface-2: #ebf0ed;
+  --ink: #0d2229;
+  --muted: #53686e;
+  --faint: #8a9ea3;
+  --line: #c6d1ce;
+  --sea: #0a7c77;
+  --sea-ink: #ffffff;
+  --sea-soft: #d3eae7;
+  --signal: #d8481a;
+  --signal-soft: #f8dcd1;
+  --good: #23835a;
+  --good-soft: #d5ebe0;
+  --warn: #a8700f;
+  --warn-soft: #f4e4c4;
+  --bad: #c13a32;
+  --rain: #3472bd;
+  --rain-soft: #d6e4f4;
+  --grid: rgba(13, 34, 41, 0.07);
+  --shadow: 0 1px 0 rgba(13, 34, 41, 0.04), 0 8px 24px -12px rgba(13, 34, 41, 0.22);
+  --shadow-lg: 0 2px 0 rgba(13, 34, 41, 0.04), 0 24px 56px -20px rgba(13, 34, 41, 0.35);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #061519;
+    --surface: #0c262d;
+    --surface-2: #103039;
+    --ink: #e3efed;
+    --muted: #93adb2;
+    --faint: #5f7d84;
+    --line: #1b3f48;
+    --sea: #3fd0c6;
+    --sea-ink: #04201f;
+    --sea-soft: #0f3a3d;
+    --signal: #ff7b4f;
+    --signal-soft: #40231a;
+    --good: #52c58c;
+    --good-soft: #123a2a;
+    --warn: #e2ac45;
+    --warn-soft: #3d2f12;
+    --bad: #ff6f66;
+    --rain: #6aa6ec;
+    --rain-soft: #14304f;
+    --grid: rgba(227, 239, 237, 0.06);
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
+    --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.3), 0 28px 60px -22px rgba(0, 0, 0, 0.85);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #061519;
+  --surface: #0c262d;
+  --surface-2: #103039;
+  --ink: #e3efed;
+  --muted: #93adb2;
+  --faint: #5f7d84;
+  --line: #1b3f48;
+  --sea: #3fd0c6;
+  --sea-ink: #04201f;
+  --sea-soft: #0f3a3d;
+  --signal: #ff7b4f;
+  --signal-soft: #40231a;
+  --good: #52c58c;
+  --good-soft: #123a2a;
+  --warn: #e2ac45;
+  --warn-soft: #3d2f12;
+  --bad: #ff6f66;
+  --rain: #6aa6ec;
+  --rain-soft: #14304f;
+  --grid: rgba(227, 239, 237, 0.06);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 2px 0 rgba(0, 0, 0, 0.3), 0 28px 60px -22px rgba(0, 0, 0, 0.85);
+  color-scheme: dark;
+}
+
+/* always-dark surface (landing hero) regardless of the page theme */
+.night {
+  --bg: #061519;
+  --surface: #0c262d;
+  --surface-2: #103039;
+  --ink: #e3efed;
+  --muted: #93adb2;
+  --faint: #5f7d84;
+  --line: #1b3f48;
+  --sea: #3fd0c6;
+  --sea-ink: #04201f;
+  --signal: #ff7b4f;
+  --grid: rgba(227, 239, 237, 0.06);
+  background: var(--bg);
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-sea: var(--sea);
+  --color-sea-ink: var(--sea-ink);
+  --color-sea-soft: var(--sea-soft);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-rain: var(--rain);
+  --color-rain-soft: var(--rain-soft);
+  --font-display: "Bricolage Grotesque Variable", "Arial Narrow", system-ui, sans-serif;
+  --font-sans: "Hanken Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection {
+  background: var(--sea);
+  color: var(--sea-ink);
+}
+
+/* signage display: condensed width axis keeps long place names on one line */
+.display {
+  font-family: var(--font-display);
+  font-stretch: 78%;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 0.95;
+  text-wrap: balance;
+}
+.display-wide {
+  font-family: var(--font-display);
+  font-stretch: 100%;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* chart paper: fine graticule behind pages */
+.paper {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sea);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+/* skeleton shimmer */
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 8px;
+}
+
+/* ambient rain for wet days */
+@keyframes rainfall {
+  from {
+    transform: translateY(-30%);
+  }
+  to {
+    transform: translateY(130%);
+  }
+}
+.rain-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.55;
+  mask-image: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
+}
+.rain-layer i {
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  height: 22px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, transparent, var(--rain));
+  transform: rotate(14deg);
+  animation: rainfall linear infinite;
+}
+
+/* radar ping for the agent run */
+@keyframes ping {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.ping {
+  animation: ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 0%, transparent);
+  }
+  30% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--signal) 28%, transparent);
+  }
+}
+.glow-once {
+  animation: glow 2.4s ease-out 1;
+}
+
+@keyframes drift {
+  to {
+    background-position: 480px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* budget slider */
+.budget-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sea), var(--sea)) 0 / var(--fill, 20%) 100% no-repeat, var(--line);
+  outline-offset: 6px;
+}
+.budget-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--sea);
+  box-shadow: var(--shadow);
+  cursor: grab;
+  transition: transform 0.15s;
+}
+.budget-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+  cursor: grabbing;
+}
+.budget-range::-moz-range-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 3px solid var(--sea);
+  cursor: grab;
+}

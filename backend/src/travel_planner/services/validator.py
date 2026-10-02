@@ -6,6 +6,7 @@ from ..schemas import Itinerary, Violation
 from .context import NIGHT_CATS, PACE_CAP, PlanContext, is_meal
 
 HARD = "error"
+LEG_HARD_LIMIT_MIN = 90  # one hop longer than this is never acceptable; shorter-but-long hops only warn
 
 
 def _fmt(m: int) -> str:
@@ -69,7 +70,10 @@ def validate(itin: Itinerary, ctx: PlanContext) -> list[Violation]:
             # --- travel
             if it.travel_from_prev:
                 day_travel += it.travel_from_prev.minutes
-                if it.travel_from_prev.minutes > c.max_leg_min:
+                if it.travel_from_prev.minutes > LEG_HARD_LIMIT_MIN:
+                    out.append(Violation(code="leg_too_long", severity="error", day=day.index, item_id=it.id,
+                                         message=f"{it.travel_from_prev.minutes} min to reach {it.name} is too far for one hop."))
+                elif it.travel_from_prev.minutes > c.max_leg_min:
                     out.append(Violation(code="long_leg", severity="warning", day=day.index, item_id=it.id,
                                          message=f"{it.travel_from_prev.minutes} min to reach {it.name}."))
 

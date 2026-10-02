@@ -106,3 +106,31 @@ async def test_other_destinations_plan(dest):
     itin = plan_heuristic(ctx)
     assert errors(validate(itin, ctx)) == []
     assert itin.totals.items >= 8
+
+
+async def test_overlong_leg_is_a_hard_violation(ctx):
+    itin = plan_heuristic(ctx)
+    it = itin.days[0].items[1]
+    it.travel_from_prev.minutes = 150
+    assert "leg_too_long" in {v.code for v in errors(validate(itin, ctx))}
+
+
+async def test_planner_avoids_day_trips_beyond_the_hop_limit():
+    ctx = await build_context(make_request(destination="Goa", interests=["nature", "relaxation"], budget_inr=60000), InProcessTools())
+    itin = plan_heuristic(ctx)
+    assert max(i.travel_from_prev.minutes for _, i in itin.all_items() if i.travel_from_prev) <= 100
+
+
+async def test_budget_increase_adds_stops_and_noop_cut_explains_itself(ctx):
+    base = plan_heuristic(ctx)
+    plan = analyze_impact(ctx, base, ChangeRequest(changes=[Change(kind="budget_delta", amount_inr=20000)]))
+    more = Editor(ctx, base).run(plan)
+    assert more.totals.items >= base.totals.items
+
+    ed = Editor(ctx, base)
+    cut = analyze_impact(ctx, base, ChangeRequest(changes=[Change(kind="budget_delta", amount_inr=-1)]))
+    ed.run(cut)  # tiny cut still needs a real saving
+    big = analyze_impact(ctx, base, ChangeRequest(changes=[Change(kind="budget_set", amount_inr=base.totals.cost_inr + 5000)]))
+    ed2 = Editor(ctx, base)
+    ed2.run(big)
+    assert any("already fits" in n for n in big.notes)
