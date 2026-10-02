@@ -40,6 +40,11 @@ export interface Item {
   source_ids: string[];
   locked: boolean;
   warnings: string[];
+  note?: string;
+  fixed_start?: number | null;
+  duration_min?: number | null;
+  user_set?: boolean;
+  custom?: boolean;
 }
 export interface Day {
   index: number;
@@ -70,9 +75,11 @@ export interface Itinerary {
   sources: Record<string, Source>;
   data_mode: "live" | "demo";
   planner: string;
+  custom_places?: Record<string, { place_id: string; name: string; tags: string[]; cost_inr: number }>;
+  extra_place_ids?: string[];
 }
 export interface ItemChange {
-  kind: "added" | "removed" | "moved" | "retimed";
+  kind: "added" | "removed" | "moved" | "retimed" | "edited";
   name: string;
   place_id: string;
   day_from: number | null;
@@ -117,11 +124,15 @@ export interface Proposal {
   violations: Violation[];
   notes: string[];
 }
+export type ChatIntent = "edit" | "constraint_change" | "whatif" | "question" | "chitchat" | "clarify" | "applied" | "revert";
 export interface ChatReply {
-  intent: "edit" | "constraint_change" | "whatif" | "question" | "chitchat";
+  intent: ChatIntent;
   reply: string;
   proposal: Proposal | null;
   citations: string[];
+  steps?: string[];
+  options?: string[];
+  applied_version_id?: string | null;
 }
 export interface ProposalSummary {
   id: string;
@@ -150,7 +161,14 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  payload: { intent?: string; version_id?: string | null; diff_summary?: string | null; citations?: string[] } | null;
+  payload: {
+    intent?: string;
+    version_id?: string | null;
+    diff_summary?: string | null;
+    citations?: string[];
+    steps?: string[];
+    options?: string[];
+  } | null;
   created_at: string;
 }
 export interface ChangeEvent {

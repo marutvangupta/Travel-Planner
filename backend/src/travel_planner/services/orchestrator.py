@@ -7,6 +7,7 @@ import re
 from collections.abc import AsyncIterator
 from datetime import date
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,8 @@ from ..schemas import (
 from ..services import memory
 from ..services.diff import diff_itineraries
 from ..services.editor import find_item
+
+log = structlog.get_logger()
 
 # ----------------------------------------------------------------------------- helpers
 
@@ -278,6 +281,9 @@ async def handle_chat(db: Session, trip: Trip, user: User, message: str, *, forc
             reply = await _agent_reply(db, trip, user, message, base, history, whatif=force_whatif)
         except LLMError:
             reply = None  # the rule path below still answers
+        except Exception as exc:  # an agent bug must not take chat down with it
+            log.warning("agent.failed", error=str(exc))
+            reply = None
     if reply is None:
         routed = parse_message(message, base, trip.budget_inr, req.pace, travelers=req.travelers)
         if force_whatif and routed.intent in ("edit", "constraint_change"):

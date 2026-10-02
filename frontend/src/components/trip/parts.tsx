@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Binoculars, Castle, Church, Cloud, CloudLightning, CloudRain, Coffee, Drama, ExternalLink, Footprints, Home, Landmark, Library,
-  MapPin, Music, Palette, Ship, Sparkles, Store, Sun, Thermometer, TrafficCone, Trees, TrainFront, Utensils, Waves, Wine, BookMarked, Car, type LucideIcon,
+  MapPin, Music, Palette, Ship, Sparkles, Store, Sun, Thermometer, TrafficCone, Trees, TrainFront, Utensils, Waves, Wine, BookMarked, Car,
+  BedDouble, CalendarCheck, CalendarClock, Plane, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { inr } from "../../lib/format";
@@ -16,6 +17,12 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   spa: Sparkles, neighbourhood: MapPin, district: MapPin, aquarium: Waves, attraction: MapPin,
 };
 export const categoryIcon = (c: string): LucideIcon => CATEGORY_ICON[c] ?? MapPin;
+
+/** The traveller's own entries carry their kind as the first tag (transport, lodging, meal, activity, other). */
+const CUSTOM_ICON: Record<string, LucideIcon> = { transport: Plane, lodging: BedDouble, meal: Utensils, activity: CalendarCheck };
+export const CUSTOM_LABEL: Record<string, string> = { transport: "Travel", lodging: "Stay", meal: "Meal", activity: "Activity", other: "Plan" };
+export const itemIcon = (it: { custom?: boolean; category: string; tags: string[] }): LucideIcon =>
+  it.custom ? (CUSTOM_ICON[it.tags[0]] ?? CalendarClock) : categoryIcon(it.category);
 
 export function WeatherGlyph({ w, size = 16 }: { w: DayWeather | null; size?: number }) {
   if (!w) return <Cloud size={size} className="text-faint" />;
@@ -193,12 +200,15 @@ export function BudgetMeter({ totals, compact }: { totals: Totals; compact?: boo
   );
 }
 
-export function KindBadge({ kind }: { kind: "added" | "removed" | "moved" | "retimed" }) {
+export type ChangeKind = "added" | "removed" | "moved" | "retimed" | "edited";
+
+export function KindBadge({ kind }: { kind: ChangeKind }) {
   const map = {
     added: "bg-good-soft text-good",
     removed: "bg-signal-soft text-signal",
     moved: "bg-warn-soft text-warn",
     retimed: "bg-rain-soft text-rain",
+    edited: "bg-sea-soft text-sea",
   } as const;
   return <span className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${map[kind]}`}>{kind}</span>;
 }
