@@ -34,6 +34,8 @@ def trip_cases(limit: int | None = None) -> list[tuple[str, TripRequest]]:
 
 # Each change case is (kind, builder). `msg(base)` produces the natural-language message from the base plan.
 CHANGE_KINDS = ["rain", "closure", "budget_cut", "avoid", "pace", "late_start"]
+# itinerary CRUD prompts, generated from each base plan (see run_evals.make_crud_message)
+CRUD_KINDS = ["move", "retime", "duration", "note", "add_place", "custom", "swap_days", "clear_day", "remove", "multi"]
 
 
 def smoke_cases() -> list[tuple[str, TripRequest]]:

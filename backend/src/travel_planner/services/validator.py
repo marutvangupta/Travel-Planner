@@ -24,13 +24,29 @@ def validate(itin: Itinerary, ctx: PlanContext) -> list[Violation]:
         wd = ctx.weekday(day.index)
         weather = ctx.weather.get(day.index)
         day_travel = 0
-        if len(day.items) > cap:
+        stops = [i for i in day.items if not i.custom]  # the traveller's own entries do not count toward the pace
+        if len(stops) > cap:
             out.append(Violation(code="too_many_items", severity="error", day=day.index,
-                                 message=f"Day {day.index + 1} has {len(day.items)} stops; a {ctx.request.pace} pace allows {cap}."))
+                                 message=f"Day {day.index + 1} has {len(stops)} stops; a {ctx.request.pace} pace allows {cap}."))
         if not any(is_meal(i.category, i.tags) for i in day.items) and day.items:
             out.append(Violation(code="missing_meal", severity="warning", day=day.index,
                                  message=f"Day {day.index + 1} has no meal stop."))
+        prev = None
         for it in day.items:
+            # --- fixed times: a pinned start the previous stop (plus travel) runs into
+            if prev is not None and it.travel_from_prev and prev.end + it.travel_from_prev.minutes > it.start + 5:
+                arrive = prev.end + it.travel_from_prev.minutes
+                if it.fixed_start is not None and prev.fixed_start is None and not prev.user_set:
+                    out.append(Violation(code="overlaps_fixed", severity="error", day=day.index, item_id=prev.id,
+                                         message=f"{prev.name} runs into {it.name}, which is fixed at {_fmt(it.start)}."))
+                else:
+                    out.append(Violation(code="late_for_fixed", severity="warning", day=day.index, item_id=it.id,
+                                         message=f"You would reach {it.name} at {_fmt(arrive)}, after its {_fmt(it.start)} start."))
+            prev = it
+            if it.travel_from_prev:
+                day_travel += it.travel_from_prev.minutes
+            if it.custom:
+                continue  # the traveller's own entry: no provider hours, diet or access data to check
             p = ctx.places.get(it.place_id)
             if p is None:
                 out.append(Violation(code="unknown_place", severity="error", day=day.index, item_id=it.id,
@@ -69,7 +85,6 @@ def validate(itin: Itinerary, ctx: PlanContext) -> list[Violation]:
 
             # --- travel
             if it.travel_from_prev:
-                day_travel += it.travel_from_prev.minutes
                 if it.travel_from_prev.minutes > LEG_HARD_LIMIT_MIN:
                     out.append(Violation(code="leg_too_long", severity="error", day=day.index, item_id=it.id,
                                          message=f"{it.travel_from_prev.minutes} min to reach {it.name} is too far for one hop."))

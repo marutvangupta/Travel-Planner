@@ -42,6 +42,20 @@ def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def estimate_leg(a: tuple[float, float], b: tuple[float, float]):  # noqa: ANN201
+    """Haversine with a 1.3 road factor. Walk under ~1.8 km; otherwise 8 min overhead, 20 km/h for the first
+    5 km (city traffic) and 35 km/h beyond."""
+    from ..schemas import RouteCell
+
+    if a == b:
+        return RouteCell(minutes=0, meters=0, mode="walk")
+    km = haversine_km(*a, *b) * 1.3
+    if km <= 1.8:
+        return RouteCell(minutes=max(2, round(km / 4.8 * 60)), meters=int(km * 1000), mode="walk")
+    return RouteCell(minutes=round(8 + min(km, 5) / 20 * 60 + max(km - 5, 0) / 35 * 60), meters=int(km * 1000),
+                     mode="drive")
+
+
 def _retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TimeoutException | httpx.TransportError):
         return True

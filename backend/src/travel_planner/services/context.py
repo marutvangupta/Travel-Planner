@@ -16,8 +16,9 @@ from ..schemas import (
     RouteCell,
     Source,
     TripRequest,
+    is_custom_id,
 )
-from ..tools.common import haversine_km
+from ..tools.common import estimate_leg, haversine_km
 from ..tools.demo_data import DESTINATIONS
 from ..tools.providers.demo import resolve_key
 
@@ -43,9 +44,32 @@ class Entry:
     source_ids: list[str] = field(default_factory=list)
     locked: bool = False
     item_id: str | None = None
+    note: str = ""
+    fixed_start: int | None = None
+    duration_min: int | None = None
+    user_set: bool = False
+
+    @property
+    def custom(self) -> bool:
+        return is_custom_id(self.place_id)
 
 
-MEAL_LIKE = {"market", "workshop", "show", "farm"}  # these serve a meal when tagged "food"
+def slot_for_time(minutes: int, *, meal: bool = False) -> str:
+    """The slot a clock time falls in. Meals snap to lunch or dinner."""
+    if meal:
+        return "lunch" if minutes < 17 * 60 else "dinner"
+    if minutes < 12 * 60:
+        return "morning"
+    if minutes < 14 * 60 + 30:
+        return "lunch"
+    if minutes < 19 * 60:
+        return "afternoon"
+    if minutes < 21 * 60 + 30:
+        return "dinner"
+    return "evening"
+
+
+MEAL_LIKE = {"market", "workshop", "show", "farm", "custom"}  # these serve a meal when tagged "food"
 
 
 def is_meal(category: str, tags: list[str]) -> bool:
@@ -57,7 +81,9 @@ def is_meal_place(p: Place) -> bool:
 
 
 def slot_ok(p: Place, slot: str) -> bool:
-    """Meals only at lunch/dinner; bars and clubs only in the evening slot."""
+    """Meals only at lunch/dinner; bars and clubs only in the evening slot. Custom entries go anywhere."""
+    if is_custom_id(p.place_id):
+        return True
     if is_meal_place(p):
         return slot in ("lunch", "dinner")
     if is_nightlife(p):
@@ -97,10 +123,32 @@ class PlanContext:
     budget: int = 0
     rain_threshold: int = 60
     route_source: str = "estimated"
+    extra_ids: set[str] = field(default_factory=set)  # provider places added by name, outside the search pool
 
     def __post_init__(self) -> None:
         if not self.budget:
             self.budget = self.request.budget_inr
+
+    def register_place(self, p: Place, *, extra: bool = False) -> None:
+        """Make a custom entry or a place found by name usable by the scheduler: travel legs to and from it are
+        estimated from straight-line distance."""
+        self.places[p.place_id] = p
+        self.sources[p.source.id] = p.source
+        if extra:
+            self.extra_ids.add(p.place_id)
+        if p.place_id in self.index:
+            return
+        points: dict[int, tuple[float, float]] = {0: self.base}
+        for pid, i in self.index.items():
+            if pid != "__base__" and pid in self.places:
+                points[i] = (self.places[pid].lat, self.places[pid].lng)
+        new_i = len(self.matrix)
+        here = (p.lat, p.lng)
+        for i, row in enumerate(self.matrix):
+            row.append(estimate_leg(points.get(i, self.base), here))
+        self.matrix.append([estimate_leg(here, points.get(i, self.base)) for i in range(new_i)]
+                           + [estimate_leg(here, here)])
+        self.index[p.place_id] = new_i
 
     # ------------------------------------------------------------------ calendar
     @property
@@ -141,6 +189,8 @@ class PlanContext:
         return "taxi" if self.transport["kind"] == "taxi" else "transit"
 
     def item_cost(self, p: Place) -> int:
+        if is_custom_id(p.place_id):
+            return p.cost_inr  # the traveller gave a total
         return p.cost_inr * self.request.travelers
 
     # ------------------------------------------------------------------ scoring
@@ -168,8 +218,10 @@ class PlanContext:
         return s
 
     def allowed(self, p: Place) -> bool:
-        """Hard filters that never depend on the schedule."""
+        """Hard filters that never depend on the schedule. Custom entries are never planner candidates."""
         c = self.constraints
+        if is_custom_id(p.place_id):
+            return False
         if p.place_id in self.closed or p.business_status != "OPERATIONAL":
             return False
         avoid = {a.lower() for a in c.avoid}

@@ -11,7 +11,7 @@ import re
 from datetime import date
 
 from ..config import get_settings
-from ..schemas import Constraints, GuideChunk, TripRequest
+from ..schemas import Constraints, GuideChunk, Itinerary, TripRequest
 from ..services.context import PlanContext, transport_for
 from ..tools import core
 from .tool_client import ToolClient
@@ -106,3 +106,19 @@ async def build_context(req: TripRequest, tools: ToolClient, *, weights: dict[st
         if w.source:
             ctx.sources[w.source.id] = w.source
     return ctx
+
+
+async def register_user_places(ctx: PlanContext, itin: Itinerary, tools: ToolClient | None = None) -> None:
+    """Custom entries live in the itinerary; places added by name are re-fetched by id (only ids are stored)."""
+    for p in itin.custom_places.values():
+        ctx.register_place(p)
+    missing = [pid for pid in itin.extra_place_ids if pid not in ctx.places]
+    if missing:
+        from .tool_client import get_tools
+
+        try:
+            for p in await (tools or get_tools()).place_details(missing):
+                ctx.register_place(p, extra=True)
+        except Exception:  # a stop that cannot be refreshed is reported by the validator as unknown
+            pass
+    ctx.extra_ids |= {pid for pid in itin.extra_place_ids if pid in ctx.places}

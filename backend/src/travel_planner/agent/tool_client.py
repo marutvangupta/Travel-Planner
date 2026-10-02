@@ -28,6 +28,16 @@ class ToolClient:
             "destination": destination, "lat": lat, "lng": lng, "interests": interests, "max_results": max_results,
         }))
 
+    async def find_place(self, destination: str, query: str, lat: float, lng: float, max_results: int = 3) -> list[Place]:
+        return core.places_from(await self._call("find_place", {
+            "destination": destination, "query": query, "lat": lat, "lng": lng, "max_results": max_results,
+        }))
+
+    async def place_details(self, place_ids: list[str]) -> list[Place]:
+        if not place_ids:
+            return []
+        return core.places_from(await self._call("get_place_details", {"place_ids": list(place_ids)}))
+
     async def route_matrix(self, points: list[tuple[float, float]]) -> list[list[RouteCell]]:
         return core.matrix_from(await self._call("compute_route_matrix", {"points": [list(p) for p in points]}))
 
@@ -51,6 +61,10 @@ class InProcessTools(ToolClient):
             return await core.geocode(args["destination"])
         if name == "search_places":
             return await core.search_places(**args)
+        if name == "find_place":
+            return await core.find_place(**args)
+        if name == "get_place_details":
+            return await core.get_place_details(args["place_ids"])
         if name == "compute_route_matrix":
             return await core.compute_route_matrix([tuple(p) for p in args["points"]])
         if name == "get_weather_forecast":

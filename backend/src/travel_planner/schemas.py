@@ -10,6 +10,14 @@ from pydantic import BaseModel, Field
 Pace = Literal["relaxed", "balanced", "packed"]
 Slot = Literal["morning", "lunch", "afternoon", "dinner", "evening"]
 SLOTS: tuple[str, ...] = ("morning", "lunch", "afternoon", "dinner", "evening")
+Diet = Literal["none", "vegetarian", "vegan"]
+CustomKind = Literal["meal", "activity", "transport", "lodging", "other"]
+CUSTOM_PREFIX = "custom:"
+
+
+def is_custom_id(place_id: str) -> bool:
+    """Entries the traveller created themselves (a flight, a check-in, dinner with friends): not from a provider."""
+    return place_id.startswith(CUSTOM_PREFIX)
 
 INTERESTS = [
     "culture", "history", "food", "nature", "adventure",
@@ -153,6 +161,11 @@ class Item(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     locked: bool = False
     warnings: list[str] = Field(default_factory=list)
+    note: str = ""
+    fixed_start: int | None = None  # the traveller pinned this start time
+    duration_min: int | None = None  # the traveller's override of the usual visit length
+    user_set: bool = False  # placed or timed by an explicit request: repair keeps it and warns instead
+    custom: bool = False  # a custom entry, not a provider place
 
 
 class Day(BaseModel):
@@ -186,6 +199,8 @@ class Itinerary(BaseModel):
     sources: dict[str, Source] = Field(default_factory=dict)
     data_mode: Literal["live", "demo"] = "demo"
     planner: str = "heuristic"  # heuristic | llm
+    custom_places: dict[str, Place] = Field(default_factory=dict)  # the traveller's own entries, kept per version
+    extra_place_ids: list[str] = Field(default_factory=list)  # provider places added by name outside the search pool
 
     def all_items(self) -> list[tuple[Day, Item]]:
         return [(d, it) for d in self.days for it in d.items]
@@ -229,6 +244,9 @@ class Violation(BaseModel):
 ChangeKind = Literal[
     "remove_item", "replace_item", "add_item", "budget_delta", "budget_set", "pace",
     "avoid", "prefer", "weather", "closure", "day_start", "lock",
+    # itinerary CRUD
+    "add_place", "add_custom", "move_item", "retime_item", "set_duration", "edit_item", "unlock",
+    "swap_days", "clear_day", "set_theme", "set_constraints",
 ]
 
 
@@ -244,6 +262,16 @@ class Change(BaseModel):
     pace: Pace | None = None
     minutes: int | None = None
     note: str | None = None
+    place_id: str | None = None  # a specific place to add (from the candidate pool)
+    to_day: int | None = None  # 0-based target day for move_item / swap_days
+    slot: Slot | None = None
+    start_min: int | None = None  # a clock time, minutes since midnight
+    duration_min: int | None = None
+    text: str | None = None  # note, day theme or the title of a custom entry
+    custom_kind: CustomKind | None = None
+    diet: Diet | None = None
+    step_free: bool | None = None
+    travelers: int | None = None
 
 
 class ChangeRequest(BaseModel):
@@ -259,7 +287,7 @@ class AffectedItem(BaseModel):
 
 
 class ItemChange(BaseModel):
-    kind: Literal["added", "removed", "moved", "retimed"]
+    kind: Literal["added", "removed", "moved", "retimed", "edited"]
     name: str
     place_id: str
     day_from: int | None = None
@@ -294,8 +322,14 @@ class Proposal(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+ChatIntent = Literal["edit", "constraint_change", "whatif", "question", "chitchat", "clarify", "applied", "revert"]
+
+
 class ChatReply(BaseModel):
-    intent: Literal["edit", "constraint_change", "whatif", "question", "chitchat"]
+    intent: ChatIntent
     reply: str
     proposal: Proposal | None = None
     citations: list[str] = Field(default_factory=list)
+    steps: list[str] = Field(default_factory=list)  # what the agent did, in order
+    options: list[str] = Field(default_factory=list)  # quick replies for a clarifying question
+    applied_version_id: str | None = None

@@ -2,29 +2,48 @@
 
 analyze_impact(): turn a ChangeRequest into concrete actions and the list of affected items (rules, no LLM).
 Editor.run(): apply the actions to only the affected slots; everything else keeps its place (locked in effect).
-repair(): bounded deterministic fix-up so the final itinerary has no hard violations.
+repair(): bounded deterministic fix-up so the final itinerary has no hard violations. Stops the traveller placed
+or timed explicitly (user_set) are never moved by repair: their problems are reported as warnings instead.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from ..schemas import (
+    CUSTOM_PREFIX,
+    SLOTS,
     AffectedItem,
     Change,
     ChangeRequest,
     DayWeather,
+    Diff,
     Itinerary,
     Place,
     Source,
     Violation,
+    is_custom_id,
 )
 from ..tools.common import haversine_km, now_iso
-from .context import PACE_CAP, Entry, PlanContext, is_meal_place, slot_ok
+from .context import (
+    PACE_CAP,
+    SLOT_EARLIEST,
+    Entry,
+    PlanContext,
+    is_meal_place,
+    is_nightlife,
+    slot_for_time,
+    slot_ok,
+)
+from .diff import diff_itineraries
 from .embeddings import tokenize
 from .planner import _day_error_keys, _tentatively_ok, make_why
 from .scheduler import compute_totals, entries_from_day, new_item_id, rebuild, schedule_day
 from .validator import errors, validate
+
+CUSTOM_DURATION = {"transport": 120, "lodging": 30, "meal": 90, "activity": 90, "other": 60}
+CUSTOM_DEFAULT_START = {"transport": 18 * 60, "lodging": 14 * 60, "meal": 20 * 60, "activity": 11 * 60, "other": 12 * 60}
 
 # ----------------------------------------------------------------------------- lookup helpers
 
@@ -60,6 +79,78 @@ def resolve_item(itin: Itinerary, change: Change):  # noqa: ANN201
     return best if best_score >= 0.5 else None
 
 
+GENERIC_PLACE_WORDS = {
+    "palace", "fort", "museum", "temple", "market", "bazaar", "restaurant", "cafe", "garden", "gardens", "lake", "beach",
+    "mahal", "hotel", "park", "gallery", "church", "mosque", "tower", "bar", "club", "street", "road", "house", "hall",
+    "point", "viewpoint", "the", "of", "and", "old", "new", "city", "art", "food", "court", "centre", "center", "village",
+}
+GENERIC_PLACE_TOKENS = set(tokenize(" ".join(GENERIC_PLACE_WORDS)))
+
+
+def resolve_place(ctx: PlanContext, name: str | None) -> Place | None:
+    """A provider place in the trip's candidate pool, by name. Fuzzy matches must share a distinctive word
+    ("Hawa" in "Hawa Mahal"), so "Imaginary Palace" never resolves to a real palace."""
+    q = (name or "").strip().lower()
+    if not q:
+        return None
+    qt = {t for t in tokenize(q) if t not in GENERIC_PLACE_TOKENS}
+    best, best_score = None, 0.0
+    for p in ctx.places.values():
+        if is_custom_id(p.place_id):
+            continue
+        nm = p.name.lower()
+        key = re.sub(r"\(.*?\)", "", nm).strip()
+        if q in (nm, key):
+            score = 3.0
+        elif q in nm or (len(key) >= 4 and key in q):
+            score = 2.0 + len(key) / 1000
+        elif qt:
+            toks = set(tokenize(nm))
+            score = len(qt & toks) / len(qt)
+        else:
+            score = 0.0
+        if score > best_score:
+            best, best_score = p, score
+    return best if best_score >= 0.5 else None
+
+
+def make_custom_place(ctx: PlanContext, title: str, kind: str = "other", *, cost_inr: int | None = None,
+                      duration_min: int | None = None, near: Place | None = None) -> Place:
+    """A traveller-defined entry (flight, check-in, dinner with friends). It sits at a named place when one was
+    given, otherwise at the trip base, so travel to it is an estimate."""
+    pid = f"{CUSTOM_PREFIX}{new_item_id()}"
+    lat, lng = (near.lat, near.lng) if near else ctx.base
+    return Place(
+        place_id=pid, name=(title.strip()[:80] or "Your entry"), category="custom",
+        tags=[kind, "food"] if kind == "meal" else [kind], lat=lat, lng=lng, cost_inr=max(int(cost_inr or 0), 0),
+        duration_min=duration_min or CUSTOM_DURATION.get(kind, 60), indoor=True, hours=None,
+        description=f"At {near.name}" if near else "", area=near.name if near else None,
+        source=Source(id=f"user:{pid[len(CUSTOM_PREFIX):]}", provider="you", title="Added by you"),
+    )
+
+
+def slot_near(p: Place, minutes: int) -> str:
+    """A slot this place may use, close to a clock time."""
+    if is_custom_id(p.place_id):
+        return slot_for_time(minutes, meal="food" in p.tags)
+    if is_meal_place(p):
+        return slot_for_time(minutes, meal=True)
+    if is_nightlife(p):
+        return "evening"
+    s = slot_for_time(minutes)
+    if slot_ok(p, s):
+        return s
+    return "morning" if minutes < 13 * 60 + 15 else ("afternoon" if minutes < 20 * 60 else "evening")
+
+
+def item_errors(ctx: PlanContext, day: int, entries: list[Entry], item_id: str | None) -> set[str]:
+    """Hard violations that one entry has within its day."""
+    sched = schedule_day(ctx, day, entries)
+    itin = Itinerary(destination=ctx.geo.name, days=[sched])
+    return {v.code for v in validate(itin, ctx) if v.severity == "error" and v.item_id == item_id
+            and v.code not in ("too_many_items", "over_budget")}
+
+
 def day_entries_map(itin: Itinerary) -> dict[int, list[Entry]]:
     return {d.index: entries_from_day(d) for d in itin.days}
 
@@ -80,6 +171,17 @@ class Action:
     reason: str = ""
     explicit: bool = False  # user named this item, so locks do not protect it
     preferred: str | None = None  # place_id suggested by the LLM from the feasible shortlist
+    place_id: str | None = None
+    to_day: int | None = None
+    slot: str | None = None
+    start: int | None = None
+    minutes: int | None = None
+    text: str | None = None
+    cost: int | None = None
+    custom_kind: str | None = None
+    near_id: str | None = None
+    locked: bool | None = None
+    drop_if_stuck: bool = False  # remove the stop when no feasible replacement exists
 
 
 @dataclass
@@ -116,7 +218,8 @@ def analyze_impact(ctx: PlanContext, itin: Itinerary, cr: ChangeRequest) -> Impa
             why = "You asked to swap it" + (f" for something {ch.interest}" if ch.interest else "")
             _affect(plan, d, it, why)
             plan.actions.append(Action("replace", item_id=it.id, indoor=ch.indoor, cheaper=bool(ch.cheaper),
-                                       interest=ch.interest, explicit=True, reason=why))
+                                       interest=ch.interest, explicit=True, reason=why,
+                                       preferred=ch.place_id if ch.place_id in ctx.places else None))
         elif k == "add_item":
             plan.actions.append(Action("add", day=ch.day, interest=ch.interest, reason=ch.note or "You asked to add something"))
         elif k in ("budget_delta", "budget_set"):
@@ -142,7 +245,7 @@ def analyze_impact(ctx: PlanContext, itin: Itinerary, cr: ChangeRequest) -> Impa
             ctx.constraints.avoid = sorted(set(ctx.constraints.avoid) | {term})
             plan.request_patch["avoid"] = list(ctx.constraints.avoid)
             for d, it in itin.all_items():
-                if term in {it.category.lower(), *[t.lower() for t in it.tags]}:
+                if not it.custom and term in {it.category.lower(), *[t.lower() for t in it.tags]}:
                     why = f"You want to avoid {term}"
                     _affect(plan, d, it, why)
                     plan.actions.append(Action("replace", item_id=it.id, reason=why, explicit=True))
@@ -192,13 +295,172 @@ def analyze_impact(ctx: PlanContext, itin: Itinerary, cr: ChangeRequest) -> Impa
             ctx.constraints.day_start_min = minutes
             plan.request_patch["late_starts"] = True
             plan.actions.append(Action("reschedule", reason=f"Days now start at {minutes // 60:02d}:{minutes % 60:02d}"))
-        elif k == "lock":
+        elif k in ("lock", "unlock"):
             hit = resolve_item(itin, ch)
             if hit:
-                plan.actions.append(Action("lock", item_id=hit[1].id))
+                plan.actions.append(Action("lock", item_id=hit[1].id, locked=k == "lock"))
+            else:
+                plan.notes.append(f"I could not find “{ch.place_name or ch.item_id}” in the itinerary.")
+        else:
+            _crud_impact(ctx, itin, ch, plan)
     if ctx.closed:
         plan.request_patch["_closed"] = sorted(ctx.closed)
     return plan
+
+
+def _day_ok(itin: Itinerary, day: int | None, plan: ImpactPlan) -> bool:
+    if day is None or not 0 <= day < len(itin.days):
+        n = len(itin.days)
+        plan.notes.append(f"This trip has {n} day{'s' if n != 1 else ''}; tell me which one (1 to {n})." if day is not None
+                          else "Which day? Tell me the day number.")
+        return False
+    return True
+
+
+def _hit(itin: Itinerary, ch: Change, plan: ImpactPlan):  # noqa: ANN202
+    hit = resolve_item(itin, ch)
+    if not hit:
+        plan.notes.append(f"I could not find “{ch.place_name or ch.item_id or 'that stop'}” in the itinerary.")
+    return hit
+
+
+def _crud_impact(ctx: PlanContext, itin: Itinerary, ch: Change, plan: ImpactPlan) -> None:
+    """Itinerary CRUD changes: add a named place or a custom entry, move, retime, resize, annotate, day edits."""
+    k = ch.kind
+    if k == "add_place":
+        p = ctx.places.get(ch.place_id) if ch.place_id else None
+        if p is None or is_custom_id(p.place_id):
+            p = resolve_place(ctx, ch.place_name)
+        if p is None:
+            if ch.interest:
+                plan.actions.append(Action("add", day=ch.day, interest=ch.interest, reason=f"You asked for {ch.interest}"))
+            else:
+                plan.notes.append(f"I could not find “{ch.place_name or ch.place_id}” among the places I know in {ctx.geo.name}.")
+            return
+        if ch.day is not None and not _day_ok(itin, ch.day, plan):
+            return
+        present = next(((d, it) for d, it in itin.all_items() if it.place_id == p.place_id), None)
+        if present:
+            d, it = present
+            if (ch.day is not None and ch.day != d.index) or ch.slot or ch.start_min is not None:
+                why = f"You asked for {it.name}" + (f" on day {ch.day + 1}" if ch.day is not None else "")
+                _affect(plan, d, it, why)
+                plan.actions.append(Action("move", item_id=it.id, to_day=ch.day, slot=ch.slot, start=ch.start_min,
+                                           reason=why, explicit=True))
+            else:
+                plan.notes.append(f"{p.name} is already on day {d.index + 1}.")
+            return
+        plan.actions.append(Action("add_place", place_id=p.place_id, day=ch.day, slot=ch.slot, start=ch.start_min,
+                                   reason=f"You asked to add {p.name}", explicit=True))
+    elif k == "add_custom":
+        title = (ch.text or ch.place_name or "").strip()
+        if not title:
+            plan.notes.append("What should I call this entry? For example “Flight to Mumbai at 18:00 on day 4”.")
+            return
+        day = ch.day if ch.day is not None else 0
+        if not _day_ok(itin, day, plan):
+            return
+        near = resolve_place(ctx, ch.place_name) if ch.place_name and ch.text else None
+        plan.actions.append(Action("add_custom", day=day, start=ch.start_min, minutes=ch.duration_min, text=title,
+                                   cost=ch.amount_inr, custom_kind=ch.custom_kind or "other",
+                                   near_id=near.place_id if near else None, reason=ch.note or "Added by you"))
+    elif k in ("move_item", "retime_item"):
+        hit = _hit(itin, ch, plan)
+        if not hit:
+            return
+        d, it = hit
+        to_day = ch.to_day if k == "move_item" else None
+        if to_day is not None and not _day_ok(itin, to_day, plan):
+            return
+        if to_day is None and ch.slot is None and ch.start_min is None:
+            plan.notes.append(f"Where should {it.name} go? Give a day, a part of the day or a time.")
+            return
+        when = []
+        if to_day is not None and to_day != d.index:
+            when.append(f"day {to_day + 1}")
+        if ch.start_min is not None:
+            when.append(f"{ch.start_min // 60:02d}:{ch.start_min % 60:02d}")
+        elif ch.slot:
+            when.append(f"the {ch.slot}")
+        why = f"You asked to move it to {' at '.join(when) or 'a new time'}"
+        _affect(plan, d, it, why)
+        plan.actions.append(Action("move", item_id=it.id, to_day=to_day, slot=ch.slot, start=ch.start_min, reason=why,
+                                   explicit=True))
+    elif k == "set_duration":
+        hit = _hit(itin, ch, plan)
+        minutes = ch.duration_min or ch.minutes
+        if not hit:
+            return
+        if not minutes:
+            plan.notes.append(f"How long should {hit[1].name} take?")
+            return
+        d, it = hit
+        why = f"You asked for {minutes // 60}h{minutes % 60:02d} there"
+        _affect(plan, d, it, why)
+        plan.actions.append(Action("duration", item_id=it.id, minutes=minutes, reason=why, explicit=True))
+    elif k == "edit_item":
+        hit = _hit(itin, ch, plan)
+        if not hit:
+            return
+        d, it = hit
+        if ch.text is None and ch.amount_inr is None:
+            plan.notes.append(f"What should I change about {it.name}? I can add a note or, for your own entries, a cost.")
+            return
+        _affect(plan, d, it, "You edited it")
+        plan.actions.append(Action("edit", item_id=it.id, text=ch.text, cost=ch.amount_inr, reason="You edited it"))
+    elif k == "swap_days":
+        a, b = ch.day, ch.to_day
+        if not (_day_ok(itin, a, plan) and _day_ok(itin, b, plan)) or a == b:
+            if a == b and a is not None:
+                plan.notes.append("Those are the same day.")
+            return
+        why = f"You swapped day {a + 1} and day {b + 1}"
+        for d in (itin.days[a], itin.days[b]):
+            for it in d.items:
+                if not (it.locked or it.custom):
+                    _affect(plan, d, it, why)
+        plan.actions.append(Action("swap_days", day=a, to_day=b, reason=why, explicit=True))
+    elif k == "clear_day":
+        if not _day_ok(itin, ch.day, plan):
+            return
+        d = itin.days[ch.day]
+        why = f"You cleared day {ch.day + 1}"
+        for it in d.items:
+            if not (it.locked or it.custom):
+                _affect(plan, d, it, why)
+        plan.actions.append(Action("clear_day", day=ch.day, reason=why, explicit=True))
+    elif k == "set_theme":
+        if not _day_ok(itin, ch.day, plan) or not (ch.text or "").strip():
+            return
+        plan.actions.append(Action("theme", day=ch.day, text=(ch.text or "").strip()[:60]))
+    elif k == "set_constraints":
+        if ch.diet and ch.diet != ctx.constraints.diet:
+            ctx.constraints.diet = ch.diet
+            ctx.request.diet = ch.diet
+            plan.request_patch["diet"] = ch.diet
+            why = f"Your diet is now {ch.diet}" if ch.diet != "none" else "Diet restriction removed"
+            for d, it in itin.all_items():
+                p = ctx.places.get(it.place_id)
+                if p and not it.custom and is_meal_place(p) and ch.diet != "none" and ch.diet not in p.diet_tags:
+                    _affect(plan, d, it, why)
+                    plan.actions.append(Action("replace", item_id=it.id, reason=why, explicit=True, drop_if_stuck=True))
+        if ch.step_free is not None and ch.step_free != ctx.constraints.step_free:
+            ctx.constraints.step_free = ch.step_free
+            ctx.request.step_free = ch.step_free
+            plan.request_patch["step_free"] = ch.step_free
+            if ch.step_free:
+                why = "You need step-free access"
+                for d, it in itin.all_items():
+                    p = ctx.places.get(it.place_id)
+                    if p and not it.custom and p.step_free is False:
+                        _affect(plan, d, it, why)
+                        plan.actions.append(Action("replace", item_id=it.id, reason=why, explicit=True, drop_if_stuck=True))
+        if ch.travelers and ch.travelers != ctx.request.travelers:
+            n = max(1, min(int(ch.travelers), 12))
+            ctx.request.travelers = n
+            plan.request_patch["travelers"] = n
+            plan.actions.append(Action("reschedule", reason=f"Costs now cover {n} traveller{'s' if n > 1 else ''}"))
+            plan.notes.append(f"Costs now cover {n} traveller{'s' if n > 1 else ''}.")
 
 
 # ----------------------------------------------------------------------------- executor
@@ -212,6 +474,8 @@ class Editor:
         self.entries = day_entries_map(itin)
         self.affected: dict[str, AffectedItem] = {}
         self.notes: list[str] = []
+        self.meta: dict[int, dict] = {}  # day theme / tip overrides
+        self.protect: set[str] = set()  # placed by this request: repair warns instead of undoing it
         self._orig = {it.id: (d.index, it) for d, it in itin.all_items()}
 
     # -- state helpers
@@ -230,6 +494,10 @@ class Editor:
 
     def total_cost(self) -> int:
         return compute_totals(self.ctx, self.scheduled()).cost_inr
+
+    def stops(self, day: int) -> int:
+        """Stops that count toward the pace cap (the traveller's own entries do not)."""
+        return sum(1 for e in self.entries[day] if not e.custom)
 
     def mark(self, item_id: str | None, reason: str) -> None:
         if item_id and item_id in self._orig and item_id not in self.affected:
@@ -289,8 +557,11 @@ class Editor:
         if not loc:
             return False
         day, entry = loc
-        if entry.locked and not explicit:
-            self.notes.append(f"Kept locked item {self.ctx.places[entry.place_id].name} as is.")
+        if entry.custom:
+            return False
+        if (entry.locked or entry.user_set) and not explicit:
+            what = "locked item" if entry.locked else "stop you chose"
+            self.notes.append(f"Kept {what} {self.ctx.places[entry.place_id].name} as is.")
             return False
         victim = self.ctx.places[entry.place_id]
         others = [e for e in self.entries[day] if e.item_id != item_id]
@@ -324,7 +595,7 @@ class Editor:
                 continue
             for e2 in list(self.entries[d2]):
                 p2 = ctx.places[e2.place_id]
-                if e2.locked or not p2.indoor or is_meal_place(p2):
+                if e2.locked or e2.user_set or e2.custom or not p2.indoor or is_meal_place(p2):
                     continue
                 if not (slot_ok(p, e2.slot) and slot_ok(p2, entry.slot)):
                     continue
@@ -368,10 +639,10 @@ class Editor:
         ctx = self.ctx
         cap = PACE_CAP[ctx.request.pace]
         order = [day] if day is not None else sorted(
-            self.entries, key=lambda d: (len(self.entries[d]) >= cap, len(self.entries[d]), ctx.is_rainy(d)))
+            self.entries, key=lambda d: (self.stops(d) >= cap, self.stops(d), ctx.is_rainy(d)))
         room = ctx.budget - self.total_cost()
         for d in order:
-            if len(self.entries[d]) >= cap:
+            if self.stops(d) >= cap:
                 continue
             slot = self._slot_for(d, interest)
             for p in self.candidates(d, slot, self.entries[d], interest=interest,
@@ -395,7 +666,7 @@ class Editor:
         for d in days:
             for e in self.entries[d]:
                 p = self.ctx.places[e.place_id]
-                if e.locked or is_meal_place(p) or not e.item_id:
+                if e.locked or e.user_set or e.custom or is_meal_place(p) or not e.item_id:
                     continue
                 s = self.ctx.score(p, day=d, slot=e.slot)
                 if best is None or s < best[0]:
@@ -416,7 +687,7 @@ class Editor:
             for d, es in self.entries.items():
                 meals = sum(1 for x in es if is_meal_place(ctx.places[x.place_id]))
                 for e in es:
-                    if e.locked or not e.item_id:
+                    if e.locked or e.user_set or e.custom or not e.item_id:
                         continue
                     p = ctx.places[e.place_id]
                     cost = ctx.item_cost(p)
@@ -449,16 +720,227 @@ class Editor:
         ctx.request.pace = pace  # type: ignore[assignment]
         cap = PACE_CAP[pace]
         for d in sorted(self.entries):
-            while len(self.entries[d]) > cap:
+            while self.stops(d) > cap:
                 victim = self._weakest([d])
                 if not victim:
                     break
                 self.remove(victim, f"Pace changed to {pace}")
         if pace != "relaxed":
             for d in sorted(self.entries):
-                while len(self.entries[d]) < cap:
+                while self.stops(d) < cap:
                     if not self.add(day=d, reason=f"Pace changed to {pace}"):
                         break
+
+    # -- itinerary CRUD
+    def _slots_for(self, p: Place, preferred: str | None = None, day: int | None = None) -> list[str]:
+        if is_meal_place(p):
+            have = {e.slot for e in self.entries.get(day, [])} if day is not None else set()
+            order = ["lunch", "dinner"] if "lunch" not in have else ["dinner", "lunch"]
+        elif is_nightlife(p):
+            order = ["evening"]
+        else:
+            order = ["morning", "afternoon", "evening"]
+        if preferred and slot_ok(p, preferred):
+            order = [preferred] + [s for s in order if s != preferred]
+        return order
+
+    def add_place(self, place_id: str, day: int | None = None, slot: str | None = None, start: int | None = None,
+                  reason: str = "") -> bool:
+        """Put a named place into the plan. The traveller asked for it, so it goes in even when it does not fit
+        cleanly; its problems then show as warnings and other stops make room."""
+        ctx = self.ctx
+        p = ctx.places[place_id]
+        if place_id in self.used():
+            return False
+        cap = PACE_CAP[ctx.request.pace]
+        days = [day] if day is not None else sorted(
+            self.entries, key=lambda d: (self.stops(d) >= cap, ctx.is_rainy(d) and not p.indoor, self.stops(d)))
+        tries: list[tuple[int, Entry]] = []
+        for d in days:
+            for s in ([slot_near(p, start)] if start is not None else self._slots_for(p, slot, d)):
+                why = make_why(ctx, p, d)
+                tries.append((d, Entry(place_id=place_id, slot=s, why=f"{reason}. {why}" if reason else why,
+                                       source_ids=[p.source.id], item_id=new_item_id(), fixed_start=start, user_set=True)))
+        if not tries:
+            return False
+        clean = [(d, e) for d, e in tries if not item_errors(ctx, d, [*self.entries[d], e], e.item_id)]
+        roomy = [(d, e) for d, e in clean if self.stops(d) < cap]
+        d, new = (roomy or clean or tries)[0]
+        self.entries[d].append(new)
+        if not clean:
+            self.notes.append(f"{p.name} does not fit cleanly on day {d + 1}; I added it anyway and flagged what to check.")
+        return True
+
+    def add_custom(self, title: str, day: int, start: int | None, minutes: int | None, cost: int | None, kind: str,
+                   near_id: str | None, reason: str = "") -> bool:
+        ctx = self.ctx
+        near = ctx.places.get(near_id) if near_id else None
+        p = make_custom_place(ctx, title, kind, cost_inr=cost, duration_min=minutes, near=near)
+        ctx.register_place(p)
+        if start is None:
+            start = CUSTOM_DEFAULT_START.get(kind, 12 * 60)
+            self.notes.append(f"I put “{p.name}” at {start // 60:02d}:{start % 60:02d}; tell me if the time is different.")
+        self.entries[day].append(Entry(place_id=p.place_id, slot=slot_for_time(start, meal=kind == "meal"),
+                                       why=reason or "Added by you", source_ids=[p.source.id], item_id=new_item_id(),
+                                       fixed_start=start, duration_min=minutes, user_set=True))
+        if kind == "meal":
+            # your own meal replaces the planned one it collides with
+            slot = slot_for_time(start, meal=True)
+            for e in list(self.entries[day]):
+                if e.place_id != p.place_id and e.slot == slot and not e.custom and not e.locked \
+                        and is_meal_place(ctx.places[e.place_id]):
+                    self.remove(e.item_id or "", f"Your own {slot} plans replace it")
+        return True
+
+    def move(self, item_id: str, to_day: int | None = None, slot: str | None = None, start: int | None = None,
+             reason: str = "") -> bool:
+        ctx = self.ctx
+        loc = self.locate(item_id)
+        if not loc:
+            return False
+        day, e = loc
+        p = ctx.places[e.place_id]
+        target = day if to_day is None else to_day
+        if target not in self.entries:
+            return False
+        others = [x for x in self.entries[target] if x.item_id != item_id]
+        old_slot = e.slot
+        if start is not None:
+            e.fixed_start, e.slot = start, slot_near(p, start)
+        elif slot:
+            if not slot_ok(p, slot):
+                allowed = [s for s in SLOTS if slot_ok(p, s)]
+                self.notes.append(f"{p.name} only fits the {' or '.join(allowed)} slot, so it stays there.")
+            else:
+                e.slot = slot
+            e.fixed_start = SLOT_EARLIEST[e.slot] if e.custom else None
+        elif target != day and not e.custom:
+            # a new day without a time: the first slot where it has no problem of its own
+            e.fixed_start = None
+            for s in self._slots_for(p, e.slot, target):
+                trial = Entry(**{**e.__dict__, "slot": s})
+                if not item_errors(ctx, target, [*others, trial], item_id):
+                    e.slot = s
+                    break
+        e.user_set = True
+        if target != day:
+            self.entries[day] = [x for x in self.entries[day] if x.item_id != item_id]
+            if is_meal_place(p) and not e.custom:
+                # one lunch and one dinner per day: the meal it displaces goes back the other way
+                clash = next((x for x in self.entries[target] if x.slot == e.slot and not x.custom and not x.locked
+                              and not x.user_set and is_meal_place(ctx.places[x.place_id])), None)
+                if clash:
+                    self.entries[target] = [x for x in self.entries[target] if x is not clash]
+                    clash.slot = old_slot if slot_ok(ctx.places[clash.place_id], old_slot) else clash.slot
+                    self.entries[day].append(clash)
+                    self.mark(clash.item_id, f"Swapped with {p.name}")
+                    self.notes.append(f"Moved {ctx.places[clash.place_id].name} to day {day + 1} in exchange.")
+            self.entries[target].append(e)
+            cap = PACE_CAP[ctx.request.pace]
+            if not e.custom and self.stops(target) > cap:
+                victim = self._weakest([target])
+                if victim and self.stops(day) < cap:
+                    loc2 = self.locate(victim)
+                    if loc2:
+                        v = loc2[1]
+                        self.entries[target] = [x for x in self.entries[target] if x.item_id != victim]
+                        self.entries[day].append(v)
+                        self.mark(victim, f"Made room for {p.name}")
+                        self.notes.append(f"Moved {ctx.places[v.place_id].name} to day {day + 1} to make room.")
+        self.mark(item_id, reason or "Moved")
+        return True
+
+    def reslot(self, item_id: str, reason: str) -> bool:
+        """Try the other slots of the same day for a stop that collides with a fixed-time entry."""
+        loc = self.locate(item_id)
+        if not loc:
+            return False
+        day, e = loc
+        p = self.ctx.places[e.place_id]
+        others = [x for x in self.entries[day] if x.item_id != item_id]
+        for s in self._slots_for(p, None, day):
+            if s == e.slot:
+                continue
+            trial = Entry(**{**e.__dict__, "slot": s})
+            if not item_errors(self.ctx, day, [*others, trial], item_id):
+                e.slot = s
+                self.mark(item_id, reason)
+                return True
+        return False
+
+    def set_duration(self, item_id: str, minutes: int, reason: str = "") -> bool:
+        loc = self.locate(item_id)
+        if not loc:
+            return False
+        e = loc[1]
+        e.duration_min = max(15, min(int(minutes), 12 * 60))
+        e.user_set = True
+        self.mark(item_id, reason or "Duration changed")
+        return True
+
+    def edit(self, item_id: str, note: str | None = None, cost: int | None = None, reason: str = "") -> bool:
+        loc = self.locate(item_id)
+        if not loc:
+            return False
+        e = loc[1]
+        if note is not None:
+            e.note = note.strip()[:200]
+        if cost is not None and e.custom:
+            p = self.ctx.places[e.place_id]
+            self.ctx.places[e.place_id] = p.model_copy(update={"cost_inr": max(int(cost), 0)})
+        elif cost is not None:
+            self.notes.append("Costs of listed places come from the provider; I can only set costs on your own entries.")
+        self.mark(item_id, reason or "Edited")
+        return True
+
+    def set_lock(self, item_id: str, locked: bool) -> bool:
+        loc = self.locate(item_id)
+        if not loc:
+            return False
+        loc[1].locked = locked
+        return True
+
+    def _day_meta(self, day: int) -> dict:
+        d = next((x for x in self.base.days if x.index == day), None)
+        base = {"theme": d.theme, "tip": d.tip, "tip_source_ids": list(d.tip_source_ids)} if d else {}
+        return {**base, **self.meta.get(day, {})}
+
+    def swap_days(self, a: int, b: int, reason: str = "") -> bool:
+        if a not in self.entries or b not in self.entries or a == b:
+            return False
+        stay = lambda e: e.locked or e.custom  # noqa: E731 - pinned to their date
+        keep_a, move_a = [e for e in self.entries[a] if stay(e)], [e for e in self.entries[a] if not stay(e)]
+        keep_b, move_b = [e for e in self.entries[b] if stay(e)], [e for e in self.entries[b] if not stay(e)]
+        self.entries[a], self.entries[b] = keep_a + move_b, keep_b + move_a
+        meta_a, meta_b = self._day_meta(a), self._day_meta(b)
+        self.meta[a], self.meta[b] = meta_b, meta_a
+        for e in move_a + move_b:
+            self.mark(e.item_id, reason or "Day swapped")
+            if e.item_id:
+                self.protect.add(e.item_id)
+        kept = [self.ctx.places[e.place_id].name for e in keep_a + keep_b]
+        if kept:
+            self.notes.append(f"Kept {', '.join(kept)} on {'its' if len(kept) == 1 else 'their'} original date (locked or your own entries).")
+        return True
+
+    def clear_day(self, day: int, reason: str = "") -> bool:
+        if day not in self.entries:
+            return False
+        kept = [e for e in self.entries[day] if e.locked or e.custom]
+        for e in self.entries[day]:
+            if e not in kept:
+                self.mark(e.item_id, reason or "Day cleared")
+        self.entries[day] = kept
+        if kept:
+            self.notes.append(f"Kept {', '.join(self.ctx.places[e.place_id].name for e in kept)} on day {day + 1}.")
+        self.meta.setdefault(day, {})["theme"] = "Free day" if not kept else self._day_meta(day).get("theme", "")
+        return True
+
+    def set_theme(self, day: int, text: str) -> bool:
+        if day not in self.entries:
+            return False
+        self.meta.setdefault(day, {})["theme"] = text
+        return True
 
     def run(self, plan: ImpactPlan) -> Itinerary:
         for a in plan.actions:
@@ -475,7 +957,7 @@ class Editor:
                     # an explicit swap/closure that cannot be satisfied drops the stop; automatic ones keep it
                     if a.explicit and a.interest is None and not a.indoor and "closed" in a.reason:
                         self.remove(a.item_id, a.reason)
-                    elif a.explicit and a.reason.startswith("You want to avoid"):
+                    elif a.explicit and (a.reason.startswith("You want to avoid") or a.drop_if_stuck):
                         self.remove(a.item_id, a.reason)
                     else:
                         self.notes.append(f"No feasible alternative for {name}; it stays in the plan.")
@@ -487,10 +969,25 @@ class Editor:
             elif a.kind == "pace" and a.pace:
                 self.set_pace(a.pace)
             elif a.kind == "lock" and a.item_id:
-                loc = self.locate(a.item_id)
-                if loc:
-                    loc[1].locked = True
-        self.itin = rebuild(self.ctx, self.base, self.entries)
+                self.set_lock(a.item_id, a.locked is not False)
+            elif a.kind == "add_place" and a.place_id:
+                if not self.add_place(a.place_id, day=a.day, slot=a.slot, start=a.start, reason=a.reason):
+                    self.notes.append(f"{self.ctx.places[a.place_id].name} is already in the plan.")
+            elif a.kind == "add_custom" and a.text and a.day is not None:
+                self.add_custom(a.text, a.day, a.start, a.minutes, a.cost, a.custom_kind or "other", a.near_id, a.reason)
+            elif a.kind == "move" and a.item_id:
+                self.move(a.item_id, to_day=a.to_day, slot=a.slot, start=a.start, reason=a.reason)
+            elif a.kind == "duration" and a.item_id and a.minutes:
+                self.set_duration(a.item_id, a.minutes, a.reason)
+            elif a.kind == "edit" and a.item_id:
+                self.edit(a.item_id, note=a.text, cost=a.cost, reason=a.reason)
+            elif a.kind == "swap_days" and a.day is not None and a.to_day is not None:
+                self.swap_days(a.day, a.to_day, a.reason)
+            elif a.kind == "clear_day" and a.day is not None:
+                self.clear_day(a.day, a.reason)
+            elif a.kind == "theme" and a.day is not None and a.text:
+                self.set_theme(a.day, a.text)
+        self.itin = rebuild(self.ctx, self.base, self.entries, self.meta)
         total = self.itin.totals.cost_inr
         resolved: list[str] = []
         for n in plan.notes:
@@ -509,21 +1006,31 @@ class Editor:
 # ----------------------------------------------------------------------------- repair
 
 
-def repair(ctx: PlanContext, itin: Itinerary, max_loops: int = 3) -> tuple[Itinerary, list[Violation], int]:
-    """Fix hard violations deterministically. Returns (itinerary, remaining violations, loops used)."""
+def _pinned(itin: Itinerary) -> set[str]:
+    return {it.id for _, it in itin.all_items() if it.user_set or it.custom}
+
+
+def repair(ctx: PlanContext, itin: Itinerary, max_loops: int = 3,
+           protect: set[str] | None = None) -> tuple[Itinerary, list[Violation], int]:
+    """Fix hard violations deterministically. Returns (itinerary, remaining violations, loops used).
+
+    Stops the traveller placed or timed explicitly (and any in `protect`, placed by the current request) are left
+    alone; their violations come back as warnings."""
+    protect = set(protect or ())
     loops = 0
-    for loops in range(1, max_loops + 1):
-        violations = validate(itin, ctx)
-        errs = errors(violations)
+    for loop in range(1, max_loops + 1):
+        pinned = _pinned(itin) | protect
+        errs = [v for v in errors(validate(itin, ctx)) if v.item_id not in pinned]
         if not errs:
-            return itin, violations, loops - 1
+            break
+        loops = loop
         ed = Editor(ctx, itin)
         for v in errs:
             if v.code == "over_budget":
                 continue
             if v.code == "too_many_items" and v.day is not None:
                 cap = PACE_CAP[ctx.request.pace]
-                while len(ed.entries.get(v.day, [])) > cap:
+                while v.day in ed.entries and ed.stops(v.day) > cap:
                     victim = ed._weakest([v.day])
                     if not victim:
                         break
@@ -535,19 +1042,49 @@ def repair(ctx: PlanContext, itin: Itinerary, max_loops: int = 3) -> tuple[Itine
                 if not (ed.replace(v.item_id, indoor=True, reason=v.message, explicit=True)
                         or ed.swap_across_days(v.item_id, v.message)):
                     continue  # keep; downgraded to a warning below
+            elif v.code == "overlaps_fixed":
+                if not ed.reslot(v.item_id, v.message):
+                    ed.remove(v.item_id, v.message)
             elif not ed.replace(v.item_id, reason=v.message, explicit=True):
                 ed.remove(v.item_id, v.message)
         if any(v.code == "over_budget" for v in errs):
             ed.reduce_budget(ctx.budget, f"Budget is ₹{ctx.budget:,}")
         itin = rebuild(ctx, itin, ed.entries)
     violations = validate(itin, ctx)
+    pinned = _pinned(itin) | protect
     final: list[Violation] = []
     for v in violations:
-        if v.severity == "error" and v.code == "outdoor_in_rain":
+        if v.severity == "error" and v.item_id in pinned:
+            final.append(v.model_copy(update={"severity": "warning", "message": f"You asked for this: {v.message}"}))
+        elif v.severity == "error" and v.code == "outdoor_in_rain":
             final.append(v.model_copy(update={"severity": "warning", "message": v.message + " No indoor alternative fits; pack rain gear."}))
         else:
             final.append(v)
     return itin, final, loops
+
+
+@dataclass
+class EditResult:
+    itinerary: Itinerary
+    violations: list[Violation]
+    affected: list[AffectedItem]
+    notes: list[str]
+    request_patch: dict
+    repair_loops: int
+    diff: Diff
+
+
+def execute_plan(ctx: PlanContext, base: Itinerary, plan: ImpactPlan) -> EditResult:
+    """Run an impact plan on `base`, repair what it broke and compare the result with `base`."""
+    ed = Editor(ctx, base)
+    new = ed.run(plan)
+    new, violations, loops = repair(ctx, new, protect=ed.protect)
+    merged = {a.item_id: a for a in plan.affected}
+    merged.update({k: v for k, v in ed.affected.items() if k not in merged})
+    affected = list(merged.values())
+    return EditResult(itinerary=new, violations=violations, affected=affected, notes=[*plan.notes, *ed.notes],
+                      request_patch=dict(plan.request_patch), repair_loops=loops,
+                      diff=diff_itineraries(base, new, affected))
 
 
 def attach_warnings(itin: Itinerary, violations: list[Violation]) -> Itinerary:

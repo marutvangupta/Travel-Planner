@@ -15,8 +15,8 @@
     "stops_per_day_mean": 4.489583333333333,
     "light_day_cases": 5,
     "warnings_mean": 0.625,
-    "latency_ms_p50": 19,
-    "latency_ms_p95": 59,
+    "latency_ms_p50": 23,
+    "latency_ms_p95": 52,
     "tokens_mean": 0.0,
     "cost_usd_mean": 0.0,
     "tool_calls_mean": 9.166666666666666,
@@ -25,8 +25,8 @@
     "repair_loops_mean": 0.0,
     "node_ms_p50": {
       "intake": 0,
-      "research": 10,
-      "plan": 4,
+      "research": 12,
+      "plan": 6,
       "validate": 0,
       "ground": 0
     },
@@ -41,7 +41,7 @@
         "citation_coverage": 1.0,
         "stops_per_day": 2.5,
         "light_days": 2,
-        "latency_ms": 17,
+        "latency_ms": 21,
         "tokens": 0,
         "cost_usd": 0.0,
         "tool_calls": 9,
@@ -59,7 +59,7 @@
         "citation_coverage": 1.0,
         "stops_per_day": 3.0,
         "light_days": 1,
-        "latency_ms": 22,
+        "latency_ms": 23,
         "tokens": 0,
         "cost_usd": 0.0,
         "tool_calls": 9,
@@ -77,7 +77,7 @@
         "citation_coverage": 1.0,
         "stops_per_day": 3.0,
         "light_days": 1,
-        "latency_ms": 18,
+        "latency_ms": 52,
         "tokens": 0,
         "cost_usd": 0.0,
         "tool_calls": 9,
@@ -93,8 +93,8 @@
     "hard_violation_rate": 0.0,
     "affected_precision": 1.0,
     "affected_recall": 1.0,
-    "stability_mean": 0.9643229166666667,
-    "stability_p10": 0.857,
+    "stability_mean": 0.9899375,
+    "stability_p10": 1.0,
     "rain_no_outdoor_in_rain": 0.5,
     "rain_resolved_share": 0.6458333333333334,
     "unresolved_rain_cases": 8,
@@ -103,8 +103,17 @@
     "avoid_respected": 1.0,
     "pace_respected": 1.0,
     "late_start_respected": 1.0,
-    "latency_ms_p50": 6,
-    "latency_ms_p95": 11,
+    "latency_ms_p50": 8,
+    "latency_ms_p95": 14,
+    "failures": []
+  },
+  "crud": {
+    "cases": 158,
+    "router_accuracy": 1.0,
+    "done_rate": 1.0,
+    "hard_violation_rate": 0.0,
+    "stability_mean": 0.9622301587301587,
+    "latency_ms_p50": 8,
     "failures": []
   },
   "retrieval": {
@@ -127,5 +136,5 @@
       }
     }
   },
-  "duration_s": 2.56
+  "duration_s": 5.07
 }

@@ -7,7 +7,7 @@ import math
 from datetime import date, timedelta
 
 from ...schemas import DayWeather, Geo, Place, RouteCell, Source
-from ..common import ToolFailure, haversine_km, now_iso
+from ..common import ToolFailure, estimate_leg, now_iso
 from ..demo_data import DESTINATIONS, PLACES, parse_hours
 
 
@@ -70,24 +70,9 @@ def get_places(place_ids: list[str]) -> list[Place]:
 
 
 def route_matrix(points: list[tuple[float, float]]) -> list[list[RouteCell]]:
-    """Haversine with a 1.3 road factor. Walk under ~1.8 km; otherwise 8 min overhead, 20 km/h for the first
-    5 km (city traffic) and 35 km/h beyond."""
-    n = len(points)
-    out: list[list[RouteCell]] = []
-    for i in range(n):
-        row: list[RouteCell] = []
-        for j in range(n):
-            if i == j:
-                row.append(RouteCell(minutes=0, meters=0, mode="walk"))
-                continue
-            km = haversine_km(*points[i], *points[j]) * 1.3
-            if km <= 1.8:
-                row.append(RouteCell(minutes=max(2, round(km / 4.8 * 60)), meters=int(km * 1000), mode="walk"))
-            else:
-                row.append(RouteCell(minutes=round(8 + min(km, 5) / 20 * 60 + max(km - 5, 0) / 35 * 60),
-                                     meters=int(km * 1000), mode="drive"))
-        out.append(row)
-    return out
+    """Estimated from straight-line distance (see estimate_leg)."""
+    return [[RouteCell(minutes=0, meters=0, mode="walk") if i == j else estimate_leg(a, b)
+             for j, b in enumerate(points)] for i, a in enumerate(points)]
 
 
 def _seed(*parts: object) -> float:
