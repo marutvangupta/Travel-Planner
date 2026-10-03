@@ -1,15 +1,37 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, CloudRain, Eye, EyeOff, Landmark, Wallet } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import { FlipBoard } from "../components/brand/FlipBoard";
-import { HeroChart } from "../components/brand/HeroChart";
+import { DestinationArt } from "../components/brand/DestinationArt";
 import { Logo } from "../components/layout/Logo";
 import { ThemeToggle } from "../components/layout/ThemeToggle";
 import { Button, Field, inputCls } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../lib/api";
 import { ease, rise, spring, stagger } from "../lib/motion";
+
+const SCENES = ["Jaipur", "Goa", "Tokyo", "Paris"];
+
+/** Slow crossfade through the demo destinations, with a scrim so the copy on top stays readable. */
+function HeroScenes() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setI((n) => (n + 1) % SCENES.length), 5200);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <>
+      <AnimatePresence initial={false}>
+        <motion.div key={SCENES[i]} initial={{ opacity: 0, scale: 1.06 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1.6, ease: "easeOut" }} className="absolute inset-0">
+          <DestinationArt destination={SCENES[i]} tall className="h-full w-full" />
+        </motion.div>
+      </AnimatePresence>
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(23,17,15,.55)_0%,rgba(23,17,15,.12)_38%,rgba(23,17,15,.82)_100%)]" />
+      <p className="absolute right-6 top-6 hidden rounded-full bg-black/25 px-3 py-1 text-[12px] font-medium text-white/90 backdrop-blur-sm xl:block">{SCENES[i]}</p>
+    </>
+  );
+}
 
 const POINTS = [
   { icon: Landmark, title: "Built from real places", body: "Opening hours, travel time and distance are checked in code before you see a plan." },
@@ -60,13 +82,13 @@ export default function AuthPage() {
     <div className="grid min-h-full lg:grid-cols-[minmax(0,1.1fr)_minmax(440px,0.9fr)]">
       <section className="night relative isolate hidden overflow-hidden lg:block" aria-label="About Waypoint">
         <div className="absolute inset-0 -z-10">
-          <HeroChart />
+          <HeroScenes />
         </div>
         <div className="relative flex h-full flex-col justify-between p-12 xl:p-14">
           <Logo />
           <div className="max-w-xl">
             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="label mb-5 flex items-center gap-3">
-              <span className="h-px w-8 bg-sea" /> Next departure
+              <span className="h-px w-8 bg-sea" /> Your next adventure
             </motion.p>
             <h1 className="display text-[clamp(44px,4.4vw,64px)]">
               <motion.span initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease, delay: 0.35 }} className="block">

@@ -2,6 +2,9 @@ import type { StreamEvent, TripRequest } from "./types";
 
 const TOKEN_KEY = "wp-token";
 
+/** Origin of the API. Empty in dev (Vite proxies /api); set VITE_API_URL at build time for production (Netlify). */
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? "").replace(/\/+$/, "");
+
 export const tokenStore = {
   get: (): string | null => {
     try {
@@ -53,7 +56,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   }
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, { ...init, headers, body });
+    res = await fetch(`${API_BASE}/api${path}`, { ...init, headers, body });
   } catch {
     throw new ApiError(0, "Cannot reach the server. Check that the API is running.");
   }
@@ -69,7 +72,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
 /** POST that answers with text/event-stream; fetch (not EventSource) because we need a body and auth header. */
 export async function streamTrip(req: TripRequest, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
   const token = tokenStore.get();
-  const res = await fetch("/api/trips/stream", {
+  const res = await fetch(`${API_BASE}/api/trips/stream`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify(req),
