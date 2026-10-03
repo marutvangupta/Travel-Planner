@@ -2,92 +2,92 @@
 
 /*
   Waypoint design tokens.
-  Concept: a navigator's chart table. Warm chart paper by day, night chart in the dark; teal ink for route and action,
-  a single signal orange reserved for change (alerts, diffs, re-plans). Type: condensed signage display for names,
-  humanist body, mono for anything that lines up (times, costs, coordinates).
+  Concept: a travel journal. Sun-warmed sand paper by day, dusk by night; a sunset terracotta/coral for route and action,
+  plum reserved for change (alerts, diffs, re-plans). Type: Fraunces serif for names and headlines, humanist body,
+  mono for anything that lines up (times, costs, coordinates).
   Every text/background pair below meets WCAG AA (4.5:1) at body sizes.
 */
 :root {
-  --bg: #f3f2ed;
-  --surface: #fbfaf7;
-  --surface-2: #ecebe4;
+  --bg: #f8f1e6;
+  --surface: #fffaf1;
+  --surface-2: #f0e6d6;
   --raised: #ffffff;
-  --ink: #0f2329;
-  --muted: #55666a;
-  --faint: #737d7a;
-  --line: #dcd9cf;
-  --line-strong: #c4c0b3;
-  --sea: #08716a;
+  --ink: #2b1d16;
+  --muted: #6b5a4e;
+  --faint: #7a6b5f;
+  --line: #e4d8c5;
+  --line-strong: #cdbda5;
+  --sea: #bd4a2b;
   --sea-ink: #ffffff;
-  --sea-soft: #e1eeea;
-  --signal: #b43f18;
-  --signal-soft: #fae7dd;
-  --good: #1b6e4a;
-  --good-soft: #e0efe5;
-  --warn: #835809;
-  --warn-soft: #f6ecd5;
-  --bad: #b8382f;
-  --rain: #28629d;
-  --rain-soft: #e3ecf6;
-  --grid: rgba(15, 35, 41, 0.06);
-  --shadow-sm: 0 1px 2px rgba(15, 35, 41, 0.06);
-  --shadow-pop: 0 1px 0 rgba(15, 35, 41, 0.04), 0 16px 40px -16px rgba(15, 35, 41, 0.32);
+  --sea-soft: #fae3d8;
+  --signal: #7a3b96;
+  --signal-soft: #f1e6f6;
+  --good: #2f7a4f;
+  --good-soft: #e3f0e4;
+  --warn: #8a5a0b;
+  --warn-soft: #f7ebcf;
+  --bad: #b8283a;
+  --rain: #2a64a3;
+  --rain-soft: #e2ecf7;
+  --grid: rgba(43, 29, 22, 0.06);
+  --shadow-sm: 0 1px 2px rgba(43, 29, 22, 0.06);
+  --shadow-pop: 0 1px 0 rgba(43, 29, 22, 0.05), 0 16px 40px -16px rgba(43, 29, 22, 0.30);
   color-scheme: light;
 }
 
 /* night chart; repeated for the explicit theme choice because @media cannot be combined with an attribute toggle */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #071519;
-    --surface: #0c2228;
-    --surface-2: #112b32;
-    --raised: #1d3f48;
-    --ink: #e4eeec;
-    --muted: #94abb0;
-    --faint: #6e8b91;
-    --line: #1a3a42;
-    --line-strong: #2a525c;
-    --sea: #3fcfc4;
-    --sea-ink: #04201f;
-    --sea-soft: #0f3437;
-    --signal: #ff8a62;
-    --signal-soft: #3a2018;
-    --good: #5ccb94;
-    --good-soft: #10352a;
+    --bg: #17110f;
+    --surface: #201815;
+    --surface-2: #2a201c;
+    --raised: #382c26;
+    --ink: #f4ece3;
+    --muted: #b9a99c;
+    --faint: #8f7f73;
+    --line: #372b26;
+    --line-strong: #51413a;
+    --sea: #ff9068;
+    --sea-ink: #2a0f06;
+    --sea-soft: #3b2118;
+    --signal: #c79bf0;
+    --signal-soft: #2f2038;
+    --good: #6fd09a;
+    --good-soft: #17301f;
     --warn: #e6b24f;
     --warn-soft: #362a10;
-    --bad: #ff6f66;
+    --bad: #ff5a6e;
     --rain: #79b0ef;
-    --rain-soft: #13294a;
-    --grid: rgba(228, 238, 236, 0.055);
+    --rain-soft: #1b2a44;
+    --grid: rgba(244, 236, 227, 0.05);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-pop: 0 1px 0 rgba(0, 0, 0, 0.3), 0 20px 44px -18px rgba(0, 0, 0, 0.85);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #071519;
-  --surface: #0c2228;
-  --surface-2: #112b32;
-  --raised: #1d3f48;
-  --ink: #e4eeec;
-  --muted: #94abb0;
-  --faint: #6e8b91;
-  --line: #1a3a42;
-  --line-strong: #2a525c;
-  --sea: #3fcfc4;
-  --sea-ink: #04201f;
-  --sea-soft: #0f3437;
-  --signal: #ff8a62;
-  --signal-soft: #3a2018;
-  --good: #5ccb94;
-  --good-soft: #10352a;
+  --bg: #17110f;
+  --surface: #201815;
+  --surface-2: #2a201c;
+  --raised: #382c26;
+  --ink: #f4ece3;
+  --muted: #b9a99c;
+  --faint: #8f7f73;
+  --line: #372b26;
+  --line-strong: #51413a;
+  --sea: #ff9068;
+  --sea-ink: #2a0f06;
+  --sea-soft: #3b2118;
+  --signal: #c79bf0;
+  --signal-soft: #2f2038;
+  --good: #6fd09a;
+  --good-soft: #17301f;
   --warn: #e6b24f;
   --warn-soft: #362a10;
-  --bad: #ff6f66;
+  --bad: #ff5a6e;
   --rain: #79b0ef;
-  --rain-soft: #13294a;
-  --grid: rgba(228, 238, 236, 0.055);
+  --rain-soft: #1b2a44;
+  --grid: rgba(244, 236, 227, 0.05);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 1px 0 rgba(0, 0, 0, 0.3), 0 20px 44px -18px rgba(0, 0, 0, 0.85);
   color-scheme: dark;
@@ -95,18 +95,18 @@
 
 /* always-dark surface (landing hero, boarding pass stub, generation radar) regardless of the page theme */
 .night {
-  --bg: #071519;
-  --surface: #0c2228;
-  --surface-2: #112b32;
-  --raised: #1d3f48;
-  --ink: #e4eeec;
-  --muted: #94abb0;
-  --faint: #6e8b91;
-  --line: #1a3a42;
-  --sea: #3fcfc4;
-  --sea-ink: #04201f;
-  --signal: #ff8a62;
-  --grid: rgba(228, 238, 236, 0.055);
+  --bg: #17110f;
+  --surface: #201815;
+  --surface-2: #2a201c;
+  --raised: #382c26;
+  --ink: #f4ece3;
+  --muted: #b9a99c;
+  --faint: #8f7f73;
+  --line: #372b26;
+  --sea: #ff9068;
+  --sea-ink: #2a0f06;
+  --signal: #c79bf0;
+  --grid: rgba(244, 236, 227, 0.05);
   background: var(--bg);
   color: var(--ink);
   color-scheme: dark;
@@ -134,11 +134,11 @@
   --color-bad: var(--bad);
   --color-rain: var(--rain);
   --color-rain-soft: var(--rain-soft);
-  --font-display: "Bricolage Grotesque Variable", "Arial Narrow", system-ui, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
   --font-sans: "Hanken Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --radius-ctl: 9px;
-  --radius-box: 12px;
+  --radius-ctl: 12px;
+  --radius-box: 18px;
 }
 
 html,
@@ -174,18 +174,18 @@ body {
 */
 .display {
   font-family: var(--font-display);
-  font-stretch: 78%;
-  font-weight: 700;
-  letter-spacing: -0.005em;
-  line-height: 0.98;
+  font-weight: 600;
+  font-variation-settings: "SOFT" 60, "WONK" 1;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
   text-wrap: balance;
 }
 .display-wide {
   font-family: var(--font-display);
-  font-stretch: 96%;
   font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 1.12;
+  font-variation-settings: "SOFT" 60;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
   text-wrap: balance;
 }
 .mono {

@@ -1,4 +1,4 @@
-/** Compass-needle mark on a teal tile. Static: the brand should not wobble every time the cursor passes. */
+/** Compass-needle mark on a sunset tile. Static: the brand should not wobble every time the cursor passes. */
 export function LogoMark({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden className="shrink-0">
